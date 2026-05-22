@@ -5,18 +5,16 @@ refactored shared code (mask_iou, mask_nms, _empty_result, inheritance)
 works identically to the original duplicated implementations.
 """
 
-from typing import Union
 
 import numpy as np
 import PIL.Image
-import torch
 import pytest
+import torch
 from beartype import beartype
 
 from sam3.model.predictor_base import Sam3MultiClassPredictorBase
 from sam3.model.sam3_multiclass import Sam3MultiClassPredictor
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -33,7 +31,7 @@ class ConcretePredictor(Sam3MultiClassPredictorBase):
     @beartype
     def set_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
         state: dict | None = None,
     ) -> dict:
         return {}

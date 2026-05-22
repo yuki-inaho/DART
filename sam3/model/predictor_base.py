@@ -8,12 +8,10 @@ Sam3MultiClassPredictorFast.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Union
 
 import numpy as np
 import PIL.Image
 import torch
-from beartype import beartype
 from jaxtyping import Bool, Float, Int
 from torchvision.transforms import v2
 
@@ -61,7 +59,7 @@ class Sam3MultiClassPredictorBase(ABC):
     @abstractmethod
     def set_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
         state: dict | None = None,
     ) -> dict: ...
 
