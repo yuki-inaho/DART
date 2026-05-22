@@ -43,13 +43,8 @@ import torch
 from demo_multiclass import CLASS_COLOURS
 from PIL import Image
 
-from sam3.efficient_backbone import build_efficientsam3_model
+from sam3.loading import load_model
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-from sam3.model_builder import (
-    build_pruned_sam3_image_model,
-    build_sam3_image_model,
-    load_pruned_config,
-)
 
 
 def draw_detections_cv2(frame_bgr, results, class_names, tracks=None):
@@ -391,61 +386,19 @@ def main():
         print("Enc-dec:  PyTorch")
 
     # --- Load model ---
-    text_cache_exists = args.text_cache and os.path.exists(args.text_cache)
-    use_trt_only = (
-        text_cache_exists and args.trt and args.trt_enc_dec and args.checkpoint is None
+    model = load_model(
+        device=device,
+        checkpoint_path=args.checkpoint,
+        efficient_backbone=args.efficient_backbone,
+        efficient_model=args.efficient_model,
+        skip_blocks=skip_blocks,
+        mask_blocks=mask_blocks,
+        text_cache_path=args.text_cache,
+        trt_engine_path=args.trt,
+        trt_enc_dec_engine_path=args.trt_enc_dec,
+        detection_only=True,
+        imgsz=args.imgsz,
     )
-
-    if use_trt_only:
-        from sam3.model.sam3_multiclass_fast import _TRTModelStub
-
-        print("Using TRT-only mode (no checkpoint — text from cache)")
-        model = _TRTModelStub(device=device)
-    elif args.efficient_backbone:
-        print(
-            f"Loading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model})..."
-        )
-        model = build_efficientsam3_model(
-            backbone_type=args.efficient_backbone,
-            model_name=args.efficient_model,
-            checkpoint_path=args.checkpoint,
-            device=device,
-            eval_mode=True,
-        )
-    else:
-        if args.checkpoint is None and not text_cache_exists:
-            print("NOTE: No --checkpoint provided, will attempt HuggingFace download")
-
-        skip_msg = f", skip_blocks={sorted(skip_blocks)}" if skip_blocks else ""
-        if mask_blocks:
-            skip_msg += f", mask_blocks={mask_blocks}"
-        print(f"Loading SAM3 model...{skip_msg}")
-        pruned_config = load_pruned_config(args.checkpoint) if args.checkpoint else None
-        if pruned_config is not None:
-            print(f"  Detected pruned checkpoint: {pruned_config}")
-            model = build_pruned_sam3_image_model(
-                checkpoint_path=args.checkpoint,
-                pruning_config=pruned_config,
-                device=device,
-                eval_mode=True,
-                skip_blocks=skip_blocks,
-            )
-            if model.transformer.decoder.presence_token is not None:
-                model.transformer.decoder.presence_token = None
-        else:
-            model = build_sam3_image_model(
-                device=device,
-                checkpoint_path=args.checkpoint,
-                eval_mode=True,
-                skip_blocks=skip_blocks,
-                mask_blocks=mask_blocks,
-            )
-
-    # Precompute position encoding buffers for target resolution
-    # (must happen before torch.compile warmup for CUDAGraph safety)
-    if args.imgsz != 1008:
-        pos_enc = model.backbone.vision_backbone.position_encoding
-        pos_enc.precompute_for_resolution(args.imgsz)
 
     # --- Create predictor ---
     predictor = Sam3MultiClassPredictorFast(

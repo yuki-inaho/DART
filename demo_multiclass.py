@@ -38,15 +38,10 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from sam3.efficient_backbone import build_efficientsam3_model
+from sam3.loading import load_model
 from sam3.model.sam3_image_processor import Sam3Processor
 from sam3.model.sam3_multiclass import Sam3MultiClassPredictor
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-from sam3.model_builder import (
-    build_pruned_sam3_image_model,
-    build_sam3_image_model,
-    load_pruned_config,
-)
 
 # Distinct colours per class (RGB).  Cycles if more classes than colours.
 CLASS_COLOURS = [
@@ -188,64 +183,19 @@ def run_multiclass_inference(
             f"--imgsz must be divisible by 14 (ViT patch size), got {imgsz}"
         )
 
-    # Check if we can use TRT-only mode (no checkpoint needed)
-    text_cache_exists = text_cache and os.path.exists(text_cache)
-    use_trt_only = (
-        text_cache_exists
-        and trt_engine_path
-        and trt_enc_dec_engine_path
-        and detection_only
-        and checkpoint_path is None
+    model = load_model(
+        device=device,
+        checkpoint_path=checkpoint_path,
+        efficient_backbone=efficient_backbone,
+        efficient_model=efficient_model,
+        skip_blocks=skip_blocks,
+        mask_blocks=mask_blocks,
+        text_cache_path=text_cache,
+        trt_engine_path=trt_engine_path,
+        trt_enc_dec_engine_path=trt_enc_dec_engine_path,
+        detection_only=detection_only,
+        imgsz=imgsz,
     )
-
-    if use_trt_only:
-        from sam3.model.sam3_multiclass_fast import _TRTModelStub
-
-        print(f"Using TRT-only mode on {device} (no checkpoint — text from cache)")
-        model = _TRTModelStub(device=device)
-    elif efficient_backbone:
-        print(
-            f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) on {device} (resolution={imgsz})..."
-        )
-        model = build_efficientsam3_model(
-            backbone_type=efficient_backbone,
-            model_name=efficient_model,
-            checkpoint_path=checkpoint_path,
-            device=device,
-            eval_mode=True,
-        )
-    else:
-        skip_msg = f", skip_blocks={sorted(skip_blocks)}" if skip_blocks else ""
-        print(f"Loading SAM3 model on {device} (resolution={imgsz}{skip_msg})...")
-        pruned_config = load_pruned_config(checkpoint_path) if checkpoint_path else None
-        if pruned_config is not None:
-            print(f"  Detected pruned checkpoint: {pruned_config}")
-            model = build_pruned_sam3_image_model(
-                checkpoint_path=checkpoint_path,
-                pruning_config=pruned_config,
-                device=device,
-                eval_mode=True,
-                skip_blocks=skip_blocks,
-            )
-            # Distilled checkpoints don't train the presence prediction head,
-            # so disable it to avoid multiplying scores by untrained garbage.
-            if model.transformer.decoder.presence_token is not None:
-                print("  Disabling untrained presence token for distilled checkpoint")
-                model.transformer.decoder.presence_token = None
-        else:
-            model = build_sam3_image_model(
-                device=device,
-                checkpoint_path=checkpoint_path,
-                eval_mode=True,
-                skip_blocks=skip_blocks,
-                mask_blocks=mask_blocks,
-            )
-
-    # Precompute position encoding buffers for target resolution
-    # (must happen before torch.compile warmup for CUDAGraph safety)
-    if imgsz != 1008:
-        pos_enc = model.backbone.vision_backbone.position_encoding
-        pos_enc.precompute_for_resolution(imgsz)
 
     # Create predictor
     if single_pass:
@@ -406,37 +356,12 @@ def run_benchmark(
 ):
     """Benchmark: per-prompt vs sequential vs batched vs shared-encoder vs single-pass."""
 
-    if efficient_backbone:
-        print(
-            f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) on {device}..."
-        )
-        model = build_efficientsam3_model(
-            backbone_type=efficient_backbone,
-            model_name=efficient_model,
-            checkpoint_path=checkpoint_path,
-            device=device,
-            eval_mode=True,
-        )
-    else:
-        print(f"Loading SAM3 model on {device}...")
-        pruned_config = load_pruned_config(checkpoint_path) if checkpoint_path else None
-        if pruned_config is not None:
-            print(f"  Detected pruned checkpoint: {pruned_config}")
-            model = build_pruned_sam3_image_model(
-                checkpoint_path=checkpoint_path,
-                pruning_config=pruned_config,
-                device=device,
-                eval_mode=True,
-            )
-            if model.transformer.decoder.presence_token is not None:
-                print("  Disabling untrained presence token for distilled checkpoint")
-                model.transformer.decoder.presence_token = None
-        else:
-            model = build_sam3_image_model(
-                device=device,
-                checkpoint_path=checkpoint_path,
-                eval_mode=True,
-            )
+    model = load_model(
+        device=device,
+        checkpoint_path=checkpoint_path,
+        efficient_backbone=efficient_backbone,
+        efficient_model=efficient_model,
+    )
 
     N = len(class_names)
     print(f"\nBenchmarking {N} classes: {class_names}")
