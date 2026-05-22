@@ -246,6 +246,12 @@ def main():
         help="Stop after N frames (0 = all)",
     )
     parser.add_argument(
+        "--fps",
+        type=float,
+        default=0,
+        help="Output video FPS (0 = match input)",
+    )
+    parser.add_argument(
         "--split-backbone",
         action="store_true",
         help="Split ViT backbone for better pipeline balance. "
@@ -509,7 +515,7 @@ def main():
     writer = None
     if args.output:
         cap_tmp = cv2.VideoCapture(args.video)
-        fps_out = cap_tmp.get(cv2.CAP_PROP_FPS)
+        fps_out = args.fps if args.fps > 0 else cap_tmp.get(cv2.CAP_PROP_FPS)
         w_out = int(cap_tmp.get(cv2.CAP_PROP_FRAME_WIDTH))
         h_out = int(cap_tmp.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap_tmp.release()

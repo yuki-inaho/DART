@@ -4,6 +4,7 @@
 
 default_imgsz := "504"
 default_max_frames := "30"
+default_fps := "0"
 default_checkpoint := "models/sam3.pt"
 python := ".venv/bin/python"
 
@@ -19,7 +20,7 @@ demo-image path classes="apple":
     xdg-open /tmp/dart_demo.jpg 2>/dev/null || echo "Saved to /tmp/dart_demo.jpg"
 
 # Video detection: detect with tqdm → loop playback (Q/ESC to quit)
-demo-video path classes="tomato" max_frames=default_max_frames imgsz=default_imgsz:
+demo-video path classes="tomato" max_frames=default_max_frames imgsz=default_imgsz fps=default_fps:
     {{python}} demo_video.py \
         --video {{path}} \
         --classes {{classes}} \
@@ -27,11 +28,12 @@ demo-video path classes="tomato" max_frames=default_max_frames imgsz=default_img
         --compile default \
         --imgsz {{imgsz}} \
         --max-frames {{max_frames}} \
+        --fps {{fps}} \
         -o /tmp/dart_demo_video.mp4
     {{python}} scripts/play_video.py /tmp/dart_demo_video.mp4
 
 # Video detection → save to file only (no playback)
-demo-video-save path output classes="tomato" max_frames=default_max_frames imgsz=default_imgsz:
+demo-video-save path output classes="tomato" max_frames=default_max_frames imgsz=default_imgsz fps=default_fps:
     {{python}} demo_video.py \
         --video {{path}} \
         --classes {{classes}} \
@@ -39,6 +41,7 @@ demo-video-save path output classes="tomato" max_frames=default_max_frames imgsz
         --compile default \
         --imgsz {{imgsz}} \
         --max-frames {{max_frames}} \
+        --fps {{fps}} \
         -o {{output}}
 
 # Run regression tests
