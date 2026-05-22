@@ -41,8 +41,8 @@ except ImportError:
     print("ERROR: pycocotools required. Install: pip install pycocotools-windows")
     sys.exit(1)
 
-from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_image_processor import Sam3Processor
+from sam3.model_builder import build_sam3_image_model
 
 
 def calculate_iou(pred_mask, gt_mask):
@@ -63,7 +63,9 @@ def main():
     parser.add_argument("--max-images", type=int, default=5000)
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
-        "--efficient-backbone", type=str, default=None,
+        "--efficient-backbone",
+        type=str,
+        default=None,
         choices=["efficientvit", "repvit", "tinyvit"],
     )
     parser.add_argument("--efficient-model", type=str, default=None)
@@ -72,7 +74,7 @@ def main():
     # Load COCO annotations
     print(f"Loading COCO annotations from {args.ann_file} ...")
     coco = COCO(args.ann_file)
-    img_ids = sorted(coco.getImgIds())[:args.max_images]
+    img_ids = sorted(coco.getImgIds())[: args.max_images]
     print(f"  {len(img_ids)} images")
 
     # Build model with inst_interactivity enabled
@@ -80,8 +82,11 @@ def main():
         if not args.efficient_model:
             print("ERROR: --efficient-backbone requires --efficient-model")
             sys.exit(1)
-        print(f"\nLoading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model}) ...")
+        print(
+            f"\nLoading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model}) ..."
+        )
         from sam3.efficient_backbone import build_efficientsam3_model
+
         model = build_efficientsam3_model(
             backbone_type=args.efficient_backbone,
             model_name=args.efficient_model,
@@ -137,7 +142,7 @@ def main():
             box = np.array([bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]])
 
             with torch.inference_mode():
-                masks, scores, _ = model.predict_inst(
+                masks, _scores, _ = model.predict_inst(
                     inference_state,
                     point_coords=None,
                     point_labels=None,
@@ -164,19 +169,21 @@ def main():
         return
 
     miou = np.mean(ious)
-    print(f"\n{'='*60}")
-    print(f"COCO val2017 Instance Segmentation (GT-box-prompted)")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("COCO val2017 Instance Segmentation (GT-box-prompted)")
+    print(f"{'=' * 60}")
     if args.efficient_backbone:
-        print(f"  Model:      EfficientSAM3 {args.efficient_backbone} {args.efficient_model}")
+        print(
+            f"  Model:      EfficientSAM3 {args.efficient_backbone} {args.efficient_model}"
+        )
     else:
-        print(f"  Model:      SAM3 (ViT-H)")
+        print("  Model:      SAM3 (ViT-H)")
     print(f"  Checkpoint: {args.checkpoint}")
     print(f"  Images:     {len(img_ids)} (skipped {n_skip})")
     print(f"  Annotations: {len(ious)}")
     print(f"  mIoU:       {miou:.4f}")
-    print(f"  Time:       {elapsed:.1f}s ({elapsed/len(img_ids)*1000:.0f}ms/img)")
-    print(f"{'='*60}")
+    print(f"  Time:       {elapsed:.1f}s ({elapsed / len(img_ids) * 1000:.0f}ms/img)")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

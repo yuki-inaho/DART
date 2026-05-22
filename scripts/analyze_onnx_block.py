@@ -7,22 +7,20 @@ Also tests stripping individual op types to identify the culprit.
 """
 
 import sys
+from collections import Counter
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-import numpy as np
-from pathlib import Path
-from collections import Counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import onnx
-from onnx import TensorProto, helper, numpy_helper
+import tensorrt as trt
 
+from sam3.model.vitdet import get_abs_pos
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
-from sam3.model.vitdet import get_abs_pos
-
-import tensorrt as trt
 
 TRT_LOGGER = trt.Logger(trt.Logger.VERBOSE)  # VERBOSE to see kernel decisions
 DEVICE = "cuda"
@@ -47,9 +45,14 @@ def export_single_block(model, block_idx=0):
         x = trunk.patch_embed(dummy)
         h, w = x.shape[1], x.shape[2]
         if trunk.pos_embed is not None:
-            x = x + get_abs_pos(trunk.pos_embed, trunk.pretrain_use_cls_token,
-                                (h, w), trunk.retain_cls_token, tiling=trunk.tile_abs_pos)
-        if hasattr(trunk, 'ln_pre') and trunk.ln_pre is not None:
+            x = x + get_abs_pos(
+                trunk.pos_embed,
+                trunk.pretrain_use_cls_token,
+                (h, w),
+                trunk.retain_cls_token,
+                tiling=trunk.tile_abs_pos,
+            )
+        if hasattr(trunk, "ln_pre") and trunk.ln_pre is not None:
             x = trunk.ln_pre(x)
 
         # Run preceding blocks
@@ -62,7 +65,9 @@ def export_single_block(model, block_idx=0):
     patch_rope_for_export(model.backbone)
     with torch.inference_mode():
         torch.onnx.export(
-            wrapper, (x,), onnx_path,
+            wrapper,
+            (x,),
+            onnx_path,
             input_names=["tokens"],
             output_names=["output"],
             opset_version=17,
@@ -84,16 +89,18 @@ def analyze_onnx(onnx_path):
         op_counts[node.op_type] += 1
         if node.op_type not in op_details:
             op_details[node.op_type] = []
-        op_details[node.op_type].append(node.name or f"{node.op_type}_{len(op_details[node.op_type])}")
+        op_details[node.op_type].append(
+            node.name or f"{node.op_type}_{len(op_details[node.op_type])}"
+        )
 
     print(f"\n  ONNX graph for {onnx_path}:")
     print(f"  Total nodes: {len(graph.node)}")
-    print(f"  Op counts:")
+    print("  Op counts:")
     for op, count in sorted(op_counts.items(), key=lambda x: -x[1]):
         print(f"    {op:30s}: {count}")
 
     # Print all nodes in order
-    print(f"\n  Full graph (in execution order):")
+    print("\n  Full graph (in execution order):")
     for i, node in enumerate(graph.node):
         inputs = [f"{inp}" for inp in node.input[:3]]
         outputs = [f"{out}" for out in node.output[:2]]
@@ -115,7 +122,9 @@ def build_and_test_trt(onnx_path, x_input, label="", verbose_log=False):
     logger = trt.Logger(log_level)
 
     builder = trt.Builder(logger)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, logger)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -163,7 +172,9 @@ def test_trt_with_precision_control(onnx_path, x_input, fp32_layer_types):
     """Build TRT engine with specific layer types forced to FP32."""
     logger = trt.Logger(trt.Logger.WARNING)
     builder = trt.Builder(logger)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, logger)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -214,7 +225,9 @@ def cosine_sim(a, b):
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
 
     # Export and analyze block 0
@@ -222,7 +235,7 @@ def main():
     print("PART 1: ONNX graph analysis of block 0")
     print("=" * 80)
     onnx_path, x_input = export_single_block(model, block_idx=0)
-    onnx_model = analyze_onnx(onnx_path)
+    analyze_onnx(onnx_path)
 
     # Test in TRT
     print("\n" + "=" * 80)
@@ -292,7 +305,9 @@ def main():
         ["POINTWISE"],
     ]:
         label = "+".join(fp32_types) if fp32_types else "pure FP16"
-        result = test_trt_with_precision_control(onnx_path_7, x_input_7, set(fp32_types))
+        result = test_trt_with_precision_control(
+            onnx_path_7, x_input_7, set(fp32_types)
+        )
         if result is not None:
             Y_mixed, count = result
             cos = cosine_sim(Y_fp32_7, Y_mixed)

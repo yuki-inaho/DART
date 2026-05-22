@@ -14,6 +14,7 @@ import PIL
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
+
 from sam3.model.box_ops import box_xyxy_to_cxcywh
 from sam3.model.data_misc import interpolate
 
@@ -73,7 +74,7 @@ def crop(image, target, region):
 def hflip(image, target):
     flipped_image = F.hflip(image)
 
-    w, h = image.size
+    w, _h = image.size
 
     target = target.copy()
     if "boxes" in target:
@@ -114,7 +115,7 @@ def resize(image, target, size, max_size=None, square=False):
             min_original_size = float(min((w, h)))
             max_original_size = float(max((w, h)))
             if max_original_size / min_original_size * size > max_size:
-                size = int(round(max_size * min_original_size / max_original_size))
+                size = round(max_size * min_original_size / max_original_size)
 
         if (w <= h and w == size) or (h <= w and h == size):
             return (h, w)
@@ -296,8 +297,8 @@ class CenterCrop:
     def __call__(self, img, target):
         image_width, image_height = img.size
         crop_height, crop_width = self.size
-        crop_top = int(round((image_height - crop_height) / 2.0))
-        crop_left = int(round((image_width - crop_width) / 2.0))
+        crop_top = round((image_height - crop_height) / 2.0)
+        crop_left = round((image_width - crop_width) / 2.0)
         return crop(img, target, (crop_top, crop_left, crop_height, crop_width))
 
 

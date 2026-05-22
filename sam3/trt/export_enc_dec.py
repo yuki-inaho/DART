@@ -58,8 +58,8 @@ class _EncDecForExport(nn.Module):
         text_mask = text_mask.to(torch.bool)
 
         # Convert NCHW → seq-first (H*W, bs, d) for encoder input
-        img_seq = img_feat.flatten(2).permute(2, 0, 1)   # (H*W, bs, 256)
-        pos_seq = img_pos.flatten(2).permute(2, 0, 1)    # (H*W, bs, 256)
+        img_seq = img_feat.flatten(2).permute(2, 0, 1)  # (H*W, bs, 256)
+        pos_seq = img_pos.flatten(2).permute(2, 0, 1)  # (H*W, bs, 256)
 
         # --- Encoder ---
         memory = self.encoder(
@@ -71,8 +71,8 @@ class _EncDecForExport(nn.Module):
             feat_sizes=[self.spatial_size],
         )
 
-        enc_hs = memory["memory"]      # (5184, bs, 256) seq-first
-        enc_pos = memory["pos_embed"]   # (5184, bs, 256) seq-first
+        enc_hs = memory["memory"]  # (5184, bs, 256) seq-first
+        enc_pos = memory["pos_embed"]  # (5184, bs, 256) seq-first
 
         # --- Decoder ---
         query_embed = self.decoder.query_embed.weight
@@ -98,7 +98,7 @@ class _EncDecForExport(nn.Module):
         ref_boxes = ref_boxes.transpose(1, 2)
 
         # Last layer only
-        hs_last = hs[-1:]         # (1, bs, 200, 256)
+        hs_last = hs[-1:]  # (1, bs, 200, 256)
         ref_last = ref_boxes[-1]  # (bs, 200, 4)
 
         # --- Scoring ---
@@ -139,7 +139,10 @@ def export_onnx(
 
     if efficient_backbone:
         from sam3.efficient_backbone import build_efficientsam3_model
-        print(f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) from {checkpoint_path} ...")
+
+        print(
+            f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) from {checkpoint_path} ..."
+        )
         model = build_efficientsam3_model(
             backbone_type=efficient_backbone,
             model_name=efficient_model,
@@ -149,6 +152,7 @@ def export_onnx(
         )
     else:
         from sam3.model_builder import build_sam3_image_model
+
         print(f"Loading SAM3 model from {checkpoint_path} ...")
         model = build_sam3_image_model(
             checkpoint_path=checkpoint_path,
@@ -183,9 +187,13 @@ def export_onnx(
     spatial_size = (spatial, spatial)
 
     # Create export module
-    export_module = _EncDecForExport(
-        encoder, decoder, scoring, spatial_size, use_presence=use_presence
-    ).cuda().eval()
+    export_module = (
+        _EncDecForExport(
+            encoder, decoder, scoring, spatial_size, use_presence=use_presence
+        )
+        .cuda()
+        .eval()
+    )
 
     # Dummy inputs (fixed shapes)
     dummy_img = torch.randn(max_classes, 256, spatial, spatial, device="cuda")
@@ -194,7 +202,7 @@ def export_onnx(
     # Use float32 for mask input (TRT handles float reliably; cast to bool in wrapper)
     dummy_mask = torch.zeros(max_classes, 32, dtype=torch.float32, device="cuda")
     # Mark some classes as padding (last few)
-    dummy_mask[max_classes // 2:, :] = 1.0
+    dummy_mask[max_classes // 2 :, :] = 1.0
 
     # Warm-up forward pass
     print("Running warm-up forward pass ...")
@@ -202,10 +210,14 @@ def export_onnx(
         outputs = export_module(dummy_img, dummy_pos, dummy_text, dummy_mask)
     if use_presence:
         scores_pt, boxes_pt, presence_pt = outputs
-        print(f"  PyTorch output shapes: scores={scores_pt.shape}, boxes={boxes_pt.shape}, presence={presence_pt.shape}")
+        print(
+            f"  PyTorch output shapes: scores={scores_pt.shape}, boxes={boxes_pt.shape}, presence={presence_pt.shape}"
+        )
     else:
         scores_pt, boxes_pt = outputs
-        print(f"  PyTorch output shapes: scores={scores_pt.shape}, boxes={boxes_pt.shape}")
+        print(
+            f"  PyTorch output shapes: scores={scores_pt.shape}, boxes={boxes_pt.shape}"
+        )
 
     # Validate against direct PyTorch forward
     if validate:
@@ -229,7 +241,7 @@ def export_onnx(
             query_embed = decoder.query_embed.weight
             tgt = query_embed.unsqueeze(1).expand(-1, max_classes, -1)
 
-            hs, ref_boxes, dec_pres_val, _ = decoder(
+            hs, ref_boxes, _dec_pres_val, _ = decoder(
                 tgt=tgt,
                 memory=memory["memory"],
                 memory_key_padding_mask=memory["padding_mask"],
@@ -284,11 +296,14 @@ def export_onnx(
     # OOM kill) on large models, which would kill the main process.
     import shutil
     import subprocess
+
     if shutil.which("python"):
         print("Running onnxsim in subprocess ...")
         result = subprocess.run(
             ["python", "-m", "onnxsim", output_path, output_path],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         if result.returncode == 0:
             print("  Simplified successfully.")
@@ -315,9 +330,7 @@ def export_onnx(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Export SAM3 encoder+decoder to ONNX"
-    )
+    parser = argparse.ArgumentParser(description="Export SAM3 encoder+decoder to ONNX")
     parser.add_argument(
         "--checkpoint", required=True, help="Path to SAM3 checkpoint (.pt)"
     )
@@ -335,11 +348,14 @@ def main():
         type=int,
         default=1008,
         help="Input image resolution (must be divisible by 14). "
-             "Default 1008 → 72x72 spatial features. "
-             "Use 672 for faster inference (48x48).",
+        "Default 1008 → 72x72 spatial features. "
+        "Use 672 for faster inference (48x48).",
     )
     parser.add_argument(
-        "--opset", type=int, default=14, help="ONNX opset version (14 recommended for TRT compatibility)"
+        "--opset",
+        type=int,
+        default=14,
+        help="ONNX opset version (14 recommended for TRT compatibility)",
     )
     parser.add_argument(
         "--no-validate",

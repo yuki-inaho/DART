@@ -15,10 +15,9 @@ import copy
 import json
 import logging
 import os
-import pickle
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import numpy as np
 import pycocotools.mask as mask_utils
@@ -26,6 +25,7 @@ import torch
 from iopath.common.file_io import g_pathmgr
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+
 from sam3.train.masks_ops import rle_encode
 from sam3.train.utils.distributed import (
     all_gather,
@@ -41,15 +41,15 @@ class CocoEvaluator:
     def __init__(
         self,
         coco_gt,
-        iou_types: List[str],
+        iou_types: list[str],
         useCats: bool,
-        dump_dir: Optional[str],
+        dump_dir: str | None,
         postprocessor,
         average_by_rarity=False,
-        metrics_dump_dir: Optional[str] = None,
+        metrics_dump_dir: str | None = None,
         gather_pred_via_filesys=False,
         use_normalized_areas=True,
-        maxdets=[1, 10, 100],
+        maxdets=None,
         exhaustive_only=False,
         all_exhaustive_only=True,
     ):
@@ -73,6 +73,8 @@ class CocoEvaluator:
 
         """
         # coco_gt = copy.deepcopy(coco_gt)
+        if maxdets is None:
+            maxdets = [1, 10, 100]
         self.coco_gts = [coco_gt] if not isinstance(coco_gt, list) else coco_gt
         assert len(maxdets) == 3, f"expecting 3 detection threshold, got {len(maxdets)}"
 
@@ -290,7 +292,7 @@ class CocoEvaluator:
         if self.rarity_buckets is None:
             self.accumulate(self.eval_img_ids)
             for iou_type, coco_eval in self.coco_evals[0].items():
-                print("IoU metric: {}".format(iou_type))
+                print(f"IoU metric: {iou_type}")
                 summarize(coco_eval)
 
             if "bbox" in self.coco_evals[0]:
@@ -403,7 +405,7 @@ class CocoEvaluator:
         elif iou_type == "keypoints":
             return self.prepare_for_coco_keypoint(predictions)
         else:
-            raise ValueError("Unknown iou type {}".format(iou_type))
+            raise ValueError(f"Unknown iou type {iou_type}")
 
     def prepare_for_coco_detection(self, predictions):
         self._lazy_init()
@@ -613,7 +615,7 @@ def segmentation_prepare(self):
         dts = self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds))
 
     for gt in gts:
-        gt["ignore"] = gt["ignore"] if "ignore" in gt else 0
+        gt["ignore"] = gt.get("ignore", 0)
         gt["ignore"] = "iscrowd" in gt and gt["iscrowd"]
         if p.iouType == "keypoints":
             gt["ignore"] = (gt["num_keypoints"] == 0) or gt["ignore"]
@@ -638,9 +640,7 @@ def evaluate(self, use_self_evaluate):
     # add backward compatibility if useSegm is specified in params
     if p.useSegm is not None:
         p.iouType = "segm" if p.useSegm == 1 else "bbox"
-        print(
-            "useSegm (deprecated) is not None. Running {} evaluation".format(p.iouType)
-        )
+        print(f"useSegm (deprecated) is not None. Running {p.iouType} evaluation")
     # print('Evaluate annotation type *{}*'.format(p.iouType))
     p.imgIds = list(np.unique(p.imgIds))
     if p.useCats:
@@ -741,7 +741,7 @@ def loadRes(self, resFile):
     :return: res (obj)         : result api object
     """
     res = COCO()
-    res.dataset["images"] = [img for img in self.dataset["images"]]
+    res.dataset["images"] = list(self.dataset["images"])
 
     if type(resFile) == str:
         anns = json.load(open(resFile))
@@ -755,15 +755,15 @@ def loadRes(self, resFile):
         "Results do not correspond to current coco set"
     )
     if "caption" in anns[0]:
-        imgIds = set([img["id"] for img in res.dataset["images"]]) & set(
-            [ann["image_id"] for ann in anns]
-        )
+        imgIds = {img["id"] for img in res.dataset["images"]} & {
+            ann["image_id"] for ann in anns
+        }
         res.dataset["images"] = [
             img for img in res.dataset["images"] if img["id"] in imgIds
         ]
         for id, ann in enumerate(anns):
             ann["id"] = id + 1
-    elif "bbox" in anns[0] and not anns[0]["bbox"] == []:
+    elif "bbox" in anns[0] and anns[0]["bbox"] != []:
         res.dataset["categories"] = copy.deepcopy(self.dataset["categories"])
         for id, ann in enumerate(anns):
             bb = ann["bbox"]
@@ -819,9 +819,9 @@ def summarize(self):
         titleStr = "Average Precision" if ap == 1 else "Average Recall"
         typeStr = "(AP)" if ap == 1 else "(AR)"
         iouStr = (
-            "{:0.2f}:{:0.2f}".format(p.iouThrs[0], p.iouThrs[-1])
+            f"{p.iouThrs[0]:0.2f}:{p.iouThrs[-1]:0.2f}"
             if iouThr is None
-            else "{:0.2f}".format(iouThr)
+            else f"{iouThr:0.2f}"
         )
 
         aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]

@@ -16,9 +16,10 @@ PyTorch (which guarantees FP32 accumulation) while letting TRT handle the rest
 
 import sys
 import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -28,6 +29,7 @@ DTYPE = torch.float16
 
 class BackboneWrapper(nn.Module):
     """Wraps backbone to return tuple instead of dict."""
+
     def __init__(self, backbone):
         super().__init__()
         self.backbone = backbone
@@ -90,7 +92,13 @@ def analyze_graph_ops(model, dummy):
         print(f"    {count:4d}x {op}")
 
     # Find attention-related ops
-    attention_ops = [op for op in op_counts if "attention" in op.lower() or "sdpa" in op.lower() or "scaled_dot" in op.lower()]
+    attention_ops = [
+        op
+        for op in op_counts
+        if "attention" in op.lower()
+        or "sdpa" in op.lower()
+        or "scaled_dot" in op.lower()
+    ]
     print(f"\n  Attention ops: {attention_ops}")
 
     unpatch_rope(backbone)
@@ -100,6 +108,7 @@ def analyze_graph_ops(model, dummy):
 def test_hybrid(model, dummy, pt_ref, label, torch_executed_ops):
     """Test torch_tensorrt with specific ops kept in PyTorch."""
     import torch_tensorrt
+
     from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
 
     print(f"\n{'=' * 80}")
@@ -117,10 +126,12 @@ def test_hybrid(model, dummy, pt_ref, label, torch_executed_ops):
         compiled = torch_tensorrt.compile(
             wrapper,
             ir="dynamo",
-            inputs=[torch_tensorrt.Input(
-                shape=(1, 3, 1008, 1008),
-                dtype=torch.float32,
-            )],
+            inputs=[
+                torch_tensorrt.Input(
+                    shape=(1, 3, 1008, 1008),
+                    dtype=torch.float32,
+                )
+            ],
             enabled_precisions={torch.float16},
             workspace_size=4 << 30,
             truncate_long_and_double=True,
@@ -130,6 +141,7 @@ def test_hybrid(model, dummy, pt_ref, label, torch_executed_ops):
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         unpatch_rope(backbone)
         return None, None
@@ -187,6 +199,7 @@ def test_compile_backend_hybrid(model, dummy, pt_ref, label, torch_executed_ops)
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         unpatch_rope(backbone)
         return None, None
@@ -195,9 +208,11 @@ def test_compile_backend_hybrid(model, dummy, pt_ref, label, torch_executed_ops)
 
     # Benchmark
     print("  Benchmarking...")
+
     def run_fn(x):
         with torch.autocast("cuda", dtype=DTYPE):
             return compiled(x)
+
     ms = benchmark(run_fn, dummy)
 
     status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
@@ -212,7 +227,9 @@ def main():
 
     print("Loading SAM3 model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -221,9 +238,11 @@ def main():
 
     # Benchmark PyTorch eager
     backbone = model.backbone
+
     def pt_eager(x):
         with torch.autocast("cuda", dtype=DTYPE):
             return backbone.forward_image(x)
+
     ms_eager = benchmark(pt_eager, dummy)
     print(f"  PyTorch eager FP16: {ms_eager:.1f}ms")
 
@@ -241,15 +260,20 @@ def main():
         "torch.ops.aten.scaled_dot_product_attention.default",
     }
     # Filter to only ops that actually appear in the graph
-    actual_sdpa = {op for op in sdpa_ops if op in [str(k) for k in op_counts.keys()]}
+    actual_sdpa = {op for op in sdpa_ops if op in [str(k) for k in op_counts]}
     if not actual_sdpa:
         # Try broader matching
-        actual_sdpa = {str(k) for k in op_counts.keys() if "attention" in str(k).lower() or "sdpa" in str(k).lower()}
+        actual_sdpa = {
+            str(k)
+            for k in op_counts
+            if "attention" in str(k).lower() or "sdpa" in str(k).lower()
+        }
     print(f"\n  Detected SDPA ops: {actual_sdpa}")
 
     try:
         cos, ms = test_hybrid(model, dummy, pt_ref, "SDPA in PyTorch", actual_sdpa)
-        if cos: results["hybrid_sdpa"] = (cos, ms)
+        if cos:
+            results["hybrid_sdpa"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -258,13 +282,22 @@ def main():
     # ================================================================
     # Strategy 2: Keep SDPA + matmul in PyTorch (attention matmuls)
     # ================================================================
-    matmul_ops = {str(k) for k in op_counts.keys() if "matmul" in str(k).lower() or "mm" in str(k).lower() or "bmm" in str(k).lower()}
+    matmul_ops = {
+        str(k)
+        for k in op_counts
+        if "matmul" in str(k).lower()
+        or "mm" in str(k).lower()
+        or "bmm" in str(k).lower()
+    }
     sdpa_matmul = actual_sdpa | matmul_ops
     print(f"\n  MatMul ops: {matmul_ops}")
 
     try:
-        cos, ms = test_hybrid(model, dummy, pt_ref, "SDPA+MatMul in PyTorch", sdpa_matmul)
-        if cos: results["hybrid_sdpa_matmul"] = (cos, ms)
+        cos, ms = test_hybrid(
+            model, dummy, pt_ref, "SDPA+MatMul in PyTorch", sdpa_matmul
+        )
+        if cos:
+            results["hybrid_sdpa_matmul"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -273,13 +306,16 @@ def main():
     # ================================================================
     # Strategy 3: Keep SDPA + softmax in PyTorch
     # ================================================================
-    softmax_ops = {str(k) for k in op_counts.keys() if "softmax" in str(k).lower()}
+    softmax_ops = {str(k) for k in op_counts if "softmax" in str(k).lower()}
     sdpa_softmax = actual_sdpa | softmax_ops
     print(f"\n  Softmax ops: {softmax_ops}")
 
     try:
-        cos, ms = test_hybrid(model, dummy, pt_ref, "SDPA+Softmax in PyTorch", sdpa_softmax)
-        if cos: results["hybrid_sdpa_softmax"] = (cos, ms)
+        cos, ms = test_hybrid(
+            model, dummy, pt_ref, "SDPA+Softmax in PyTorch", sdpa_softmax
+        )
+        if cos:
+            results["hybrid_sdpa_softmax"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -290,10 +326,14 @@ def main():
     # ================================================================
     try:
         cos, ms = test_compile_backend_hybrid(
-            model, dummy, pt_ref, "SDPA in PyTorch",
+            model,
+            dummy,
+            pt_ref,
+            "SDPA in PyTorch",
             actual_sdpa,
         )
-        if cos: results["compile_hybrid_sdpa"] = (cos, ms)
+        if cos:
+            results["compile_hybrid_sdpa"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -308,7 +348,9 @@ def main():
         print(f"  {'Approach':>30s} | {'FPN[-1] cos':>12s} | {'Speed':>7s} | Status")
         print("  " + "-" * 65)
         for name, (cos, ms) in sorted(results.items(), key=lambda x: x[1][1]):
-            status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
+            status = (
+                "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
+            )
             print(f"  {name:>30s} | {cos[-1]:>12.4f} | {ms:>5.1f}ms | {status}")
     else:
         print("  No successful approaches!")

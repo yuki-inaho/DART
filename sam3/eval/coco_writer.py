@@ -10,18 +10,21 @@ Supports distributed processing with multiple GPUs/processes.
 """
 
 import copy
+import functools
 import gc
 import heapq
 import json
 import logging
+import operator
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pycocotools.mask as mask_utils
 import torch
 from iopath.common.file_io import g_pathmgr
+
 from sam3.eval.coco_eval_offline import convert_to_xywh
 from sam3.train.masks_ops import rle_encode
 from sam3.train.utils.distributed import (
@@ -30,7 +33,6 @@ from sam3.train.utils.distributed import (
     get_rank,
     is_main_process,
 )
-
 
 ### Helper functions and classes
 
@@ -61,7 +63,7 @@ class PredictionDumper:
         iou_type: str,
         gather_pred_via_filesys: bool = False,
         merge_predictions: bool = False,
-        pred_file_evaluators: Optional[Any] = None,
+        pred_file_evaluators: Any | None = None,
     ):
         """
         Initialize the PredictionDumper.
@@ -196,9 +198,7 @@ class PredictionDumper:
             seen_img_cat.update(cur_seen_img_cat)
 
         # Flatten the heap elements back to a list
-        merged_dump = sum(
-            [[h.val for h in cur_preds] for cur_preds in preds_by_image.values()], []
-        )
+        merged_dump = functools.reduce(operator.iadd, [[h.val for h in cur_preds] for cur_preds in preds_by_image.values()], [])
 
         return merged_dump
 

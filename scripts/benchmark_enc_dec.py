@@ -29,7 +29,6 @@ import argparse
 import os
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -79,14 +78,12 @@ def print_quality(label, scores, boxes, ref_scores, ref_boxes):
     box_cos = cosine_similarity(boxes, ref_boxes)
     score_diff = (scores.float() - ref_scores.float()).abs().max().item()
     box_diff = (boxes.float() - ref_boxes.float()).abs().max().item()
-    print(f"  Quality vs FP32 ref:")
+    print("  Quality vs FP32 ref:")
     print(f"    scores: cos={score_cos:.6f}  max_diff={score_diff:.4e}")
     print(f"    boxes:  cos={box_cos:.6f}  max_diff={box_diff:.4e}")
 
 
-def build_enc_dec_engine(
-    onnx_path, engine_path, mixed_precision=None, opt_level=3
-):
+def build_enc_dec_engine(onnx_path, engine_path, mixed_precision=None, opt_level=3):
     """Build a TRT engine from enc_dec ONNX."""
     from sam3.trt.build_engine import build_engine
 
@@ -102,32 +99,36 @@ def build_enc_dec_engine(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Benchmark enc-dec: TRT vs PyTorch"
-    )
+    parser = argparse.ArgumentParser(description="Benchmark enc-dec: TRT vs PyTorch")
     parser.add_argument("--checkpoint", default="sam3.pt")
     parser.add_argument("--image", default="x.jpg")
     parser.add_argument(
-        "--classes", nargs="+",
+        "--classes",
+        nargs="+",
         default=["person", "car", "bicycle", "dog"],
     )
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--runs", type=int, default=100)
     parser.add_argument(
-        "--engine", default=None,
+        "--engine",
+        default=None,
         help="Path to pre-built TRT FP16 engine (default: auto-build)",
     )
     parser.add_argument(
-        "--onnx", default="enc_dec.onnx",
+        "--onnx",
+        default="enc_dec.onnx",
         help="Path to enc_dec ONNX (for building engines)",
     )
     parser.add_argument("--no-trt", action="store_true", help="Skip TRT tests")
     parser.add_argument(
-        "--rebuild", action="store_true",
+        "--rebuild",
+        action="store_true",
         help="Force re-export ONNX and rebuild engines",
     )
     parser.add_argument(
-        "--max-classes", type=int, default=4,
+        "--max-classes",
+        type=int,
+        default=4,
         help="Max classes for TRT engine batch dim",
     )
     args = parser.parse_args()
@@ -142,18 +143,22 @@ def main():
     # Load model and prepare inputs
     # ---------------------------------------------------------------
     from PIL import Image
-    from torchvision.transforms import v2
 
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
 
     print("\nLoading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
 
     # Set classes (pre-computes text embeddings)
@@ -166,16 +171,16 @@ def main():
 
     # Extract image features (same as predict() does)
     img_ids = torch.tensor([0], device=device, dtype=torch.long)
-    backbone_out, img_feats, img_pos_embeds, vis_feat_sizes = (
-        model._get_img_feats(backbone_out, img_ids)
+    backbone_out, img_feats, img_pos_embeds, vis_feat_sizes = model._get_img_feats(
+        backbone_out, img_ids
     )
 
     # Text features
-    text_feats = predictor._batched_text   # (seq, N, d) seq-first
-    text_mask = predictor._batched_mask    # (N, seq)
+    text_feats = predictor._batched_text  # (seq, N, d) seq-first
+    text_mask = predictor._batched_mask  # (N, seq)
     N = num_classes
 
-    print(f"\nEncoder-decoder inputs:")
+    print("\nEncoder-decoder inputs:")
     print(f"  img_feats[-1]: {img_feats[-1].shape}")
     print(f"  img_pos[-1]:   {img_pos_embeds[-1].shape}")
     print(f"  text_feats:    {text_feats.shape}")
@@ -246,8 +251,7 @@ def main():
     results = []
 
     ref_out, ref_stats = benchmark_fn(
-        pytorch_enc_dec, args.warmup, args.runs,
-        "PyTorch FP32 eager"
+        pytorch_enc_dec, args.warmup, args.runs, "PyTorch FP32 eager"
     )
     ref_scores, ref_boxes = ref_out
     results.append(ref_stats)
@@ -261,8 +265,7 @@ def main():
             return pytorch_enc_dec()
 
     out, stats = benchmark_fn(
-        pytorch_enc_dec_fp16, args.warmup, args.runs,
-        "PyTorch FP16 autocast (eager)"
+        pytorch_enc_dec_fp16, args.warmup, args.runs, "PyTorch FP16 autocast (eager)"
     )
     print_quality("FP16 eager", out[0], out[1], ref_scores, ref_boxes)
     results.append(stats)
@@ -277,8 +280,12 @@ def main():
 
         def compiled_enc_dec_fp16():
             with torch.autocast("cuda", dtype=torch.float16):
-                batched_img_feats = [f.expand(-1, N, -1).contiguous() for f in img_feats]
-                batched_img_pos = [p.expand(-1, N, -1).contiguous() for p in img_pos_embeds]
+                batched_img_feats = [
+                    f.expand(-1, N, -1).contiguous() for f in img_feats
+                ]
+                batched_img_pos = [
+                    p.expand(-1, N, -1).contiguous() for p in img_pos_embeds
+                ]
 
                 prompt = text_feats
                 prompt_mask_bool = text_mask
@@ -325,8 +332,10 @@ def main():
                 return scores, boxes
 
         out, stats = benchmark_fn(
-            compiled_enc_dec_fp16, args.warmup, args.runs,
-            "torch.compile default + FP16"
+            compiled_enc_dec_fp16,
+            args.warmup,
+            args.runs,
+            "torch.compile default + FP16",
         )
         print_quality("compile default FP16", out[0], out[1], ref_scores, ref_boxes)
         results.append(stats)
@@ -343,6 +352,7 @@ def main():
     if not args.no_trt:
         try:
             import tensorrt as trt
+
             print(f"\nTensorRT: {trt.__version__}")
         except ImportError:
             print("\nTensorRT not installed, skipping TRT tests.")
@@ -351,12 +361,13 @@ def main():
     if not args.no_trt:
         onnx_path = args.onnx
         max_classes = args.max_classes
-        assert N <= max_classes, f"num_classes={N} > max_classes={max_classes}"
+        assert max_classes >= N, f"num_classes={N} > max_classes={max_classes}"
 
         # Export ONNX if needed
         if args.rebuild or not os.path.exists(onnx_path):
             print(f"\nExporting enc_dec ONNX -> {onnx_path} ...")
             from sam3.trt.export_enc_dec import export_onnx
+
             export_onnx(
                 checkpoint_path=args.checkpoint,
                 output_path=onnx_path,
@@ -372,7 +383,9 @@ def main():
             build_enc_dec_engine(onnx_path, engine_pure, mixed_precision=None)
 
         trt_pure = TRTEncoderDecoder(
-            engine_path=engine_pure, max_classes=max_classes, device=device,
+            engine_path=engine_pure,
+            max_classes=max_classes,
+            device=device,
         )
 
         def trt_pure_fn():
@@ -385,8 +398,7 @@ def main():
             )
 
         out, stats = benchmark_fn(
-            trt_pure_fn, args.warmup, args.runs,
-            "TensorRT FP16 (pure)"
+            trt_pure_fn, args.warmup, args.runs, "TensorRT FP16 (pure)"
         )
         print_quality("TRT FP16 pure", out[0], out[1], ref_scores, ref_boxes)
         results.append(stats)
@@ -408,7 +420,9 @@ def main():
 
         if engine_norm and os.path.exists(engine_norm):
             trt_norm = TRTEncoderDecoder(
-                engine_path=engine_norm, max_classes=max_classes, device=device,
+                engine_path=engine_norm,
+                max_classes=max_classes,
+                device=device,
             )
 
             def trt_norm_fn():
@@ -421,8 +435,7 @@ def main():
                 )
 
             out, stats = benchmark_fn(
-                trt_norm_fn, args.warmup, args.runs,
-                "TensorRT FP16 (norm FP32)"
+                trt_norm_fn, args.warmup, args.runs, "TensorRT FP16 (norm FP32)"
             )
             print_quality("TRT FP16 norm", out[0], out[1], ref_scores, ref_boxes)
             results.append(stats)
@@ -433,14 +446,14 @@ def main():
     # ---------------------------------------------------------------
     # Summary
     # ---------------------------------------------------------------
-    print(f"\n\n{'='*75}")
+    print(f"\n\n{'=' * 75}")
     print("SUMMARY - Encoder+Decoder+Scoring Pipeline")
-    print(f"{'='*75}")
+    print(f"{'=' * 75}")
     print(f"  Classes: {args.classes} (N={N})")
     print(f"  Image features: {img_feats[-1].shape}")
     print()
     print(f"{'Backend':<42s} {'Avg':>8s} {'Min':>8s} {'P50':>8s} {'P95':>8s}")
-    print(f"{'-'*42} {'-'*8} {'-'*8} {'-'*8} {'-'*8}")
+    print(f"{'-' * 42} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8}")
     for r in results:
         print(
             f"{r['label']:<42s} "

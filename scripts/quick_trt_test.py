@@ -47,18 +47,21 @@ def main():
 
     # --- PyTorch reference ---
     print("\n--- PyTorch FP32 Reference ---")
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
 
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
-
-    from torchvision.transforms import v2
 
     from torchvision.transforms import v2
 
@@ -119,7 +122,7 @@ def main():
     trt_fpn = trt_out["backbone_fpn"]
     trt_dict = {f"fpn_{i}": trt_fpn[i] for i in range(len(trt_fpn))}
 
-    print(f"\n  Cosine similarity vs PyTorch FP32:")
+    print("\n  Cosine similarity vs PyTorch FP32:")
     for k in ref_keys:
         if k in trt_dict:
             cos = cosine_similarity(ref_dict[k], trt_dict[k])

@@ -2,23 +2,23 @@
 # Modified for EfficientSAM3
 
 import math
-import copy
-from typing import Optional, Sequence, Union, List, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.ops import StochasticDepth
 from timm.models.layers import DropPath, trunc_normal_
+from torchvision.ops import StochasticDepth
 
 # ==============================================================================
 # MobileOneBlock (from mobileclip/modules/common/mobileone.py)
 # ==============================================================================
 
+
 class SEBlock(nn.Module):
     """Squeeze and Excite module."""
+
     def __init__(self, in_channels: int, rd_ratio: float = 0.0625) -> None:
-        super(SEBlock, self).__init__()
+        super().__init__()
         self.reduce = nn.Conv2d(
             in_channels=in_channels,
             out_channels=int(in_channels * rd_ratio),
@@ -35,7 +35,7 @@ class SEBlock(nn.Module):
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        b, c, h, w = inputs.size()
+        _b, c, h, w = inputs.size()
         x = F.avg_pool2d(inputs, kernel_size=[h, w])
         x = self.reduce(x)
         x = F.relu(x)
@@ -47,6 +47,7 @@ class SEBlock(nn.Module):
 
 class MobileOneBlock(nn.Module):
     """MobileOne building block."""
+
     def __init__(
         self,
         in_channels: int,
@@ -63,7 +64,7 @@ class MobileOneBlock(nn.Module):
         num_conv_branches: int = 1,
         activation: nn.Module = nn.GELU(),
     ) -> None:
-        super(MobileOneBlock, self).__init__()
+        super().__init__()
         self.inference_mode = inference_mode
         self.groups = groups
         self.stride = stride
@@ -103,7 +104,7 @@ class MobileOneBlock(nn.Module):
             )
 
             if num_conv_branches > 0:
-                rbr_conv = list()
+                rbr_conv = []
                 for _ in range(self.num_conv_branches):
                     rbr_conv.append(
                         self._conv_bn(kernel_size=kernel_size, padding=padding)
@@ -163,7 +164,7 @@ class MobileOneBlock(nn.Module):
 
         self.inference_mode = True
 
-    def _get_kernel_bias(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _get_kernel_bias(self) -> tuple[torch.Tensor, torch.Tensor]:
         kernel_scale = 0
         bias_scale = 0
         if self.rbr_scale is not None:
@@ -189,8 +190,8 @@ class MobileOneBlock(nn.Module):
         return kernel_final, bias_final
 
     def _fuse_bn_tensor(
-        self, branch: Union[nn.Sequential, nn.BatchNorm2d]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, branch: nn.Sequential | nn.BatchNorm2d
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if isinstance(branch, nn.Sequential):
             kernel = branch.conv.weight
             running_mean = branch.bn.running_mean
@@ -243,16 +244,18 @@ class MobileOneBlock(nn.Module):
         mod_list.add_module("bn", nn.BatchNorm2d(num_features=self.out_channels))
         return mod_list
 
+
 # ==============================================================================
 # Transformer Utils (from mobileclip/modules/common/transformer.py)
 # ==============================================================================
 
+
 class LayerNormFP32(nn.LayerNorm):
     def __init__(
         self,
-        normalized_shape: Union[int, List[int], torch.Size],
-        eps: Optional[float] = 1e-5,
-        elementwise_affine: Optional[bool] = True,
+        normalized_shape: int | list[int] | torch.Size,
+        eps: float | None = 1e-5,
+        elementwise_affine: bool | None = True,
         *args,
         **kwargs,
     ):
@@ -283,8 +286,8 @@ class LearnablePositionalEmbedding(nn.Module):
         self,
         num_embeddings: int,
         embedding_dim: int,
-        padding_idx: Optional[int] = None,
-        interpolation_mode: Optional[str] = "bilinear",
+        padding_idx: int | None = None,
+        interpolation_mode: str | None = "bilinear",
         *args,
         **kwargs,
     ):
@@ -322,9 +325,9 @@ class PositionalEmbedding(nn.Module):
         self,
         num_embeddings: int,
         embedding_dim: int,
-        padding_idx: Optional[int] = None,
-        is_learnable: Optional[bool] = False,
-        interpolation_mode: Optional[str] = "bilinear",
+        padding_idx: int | None = None,
+        is_learnable: bool | None = False,
+        interpolation_mode: str | None = "bilinear",
         *args,
         **kwargs,
     ):
@@ -347,9 +350,9 @@ class MultiHeadAttention(nn.Module):
         self,
         embed_dim: int,
         num_heads: int,
-        attn_dropout: Optional[float] = 0.0,
-        bias: Optional[bool] = True,
-        output_dim: Optional[int] = None,
+        attn_dropout: float | None = 0.0,
+        bias: bool | None = True,
+        output_dim: int | None = None,
         *args,
         **kwargs,
     ) -> None:
@@ -372,11 +375,11 @@ class MultiHeadAttention(nn.Module):
     def _forward_impl(
         self,
         x_q: torch.Tensor,
-        x_kv: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
-        attn_mask: Optional[torch.Tensor] = None,
+        x_kv: torch.Tensor | None = None,
+        key_padding_mask: torch.Tensor | None = None,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        b_sz, S_len, in_channels = x_q.shape
+        b_sz, S_len, _in_channels = x_q.shape
 
         if x_kv is None:
             qkv = self.qkv_proj(x_q).reshape(b_sz, S_len, 3, self.num_heads, -1)
@@ -395,7 +398,7 @@ class MultiHeadAttention(nn.Module):
             attn = attn + attn_mask
 
         if key_padding_mask is not None:
-             attn = attn.masked_fill(
+            attn = attn.masked_fill(
                 key_padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
                 float("-inf"),
             )
@@ -410,9 +413,9 @@ class MultiHeadAttention(nn.Module):
     def forward(
         self,
         x_q: torch.Tensor,
-        x_kv: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
-        attn_mask: Optional[torch.Tensor] = None,
+        x_kv: torch.Tensor | None = None,
+        key_padding_mask: torch.Tensor | None = None,
+        attn_mask: torch.Tensor | None = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:
@@ -429,12 +432,12 @@ class TransformerEncoder(nn.Module):
         self,
         embed_dim: int,
         ffn_latent_dim: int,
-        num_heads: Optional[int] = 8,
-        attn_dropout: Optional[float] = 0.0,
-        dropout: Optional[float] = 0.0,
-        ffn_dropout: Optional[float] = 0.0,
-        transformer_norm_layer: Optional[str] = "layer_norm",
-        stochastic_dropout: Optional[float] = 0.0,
+        num_heads: int | None = 8,
+        attn_dropout: float | None = 0.0,
+        dropout: float | None = 0.0,
+        ffn_dropout: float | None = 0.0,
+        transformer_norm_layer: str | None = "layer_norm",
+        stochastic_dropout: float | None = 0.0,
         *args,
         **kwargs,
     ) -> None:
@@ -469,9 +472,9 @@ class TransformerEncoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        x_prev: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
-        attn_mask: Optional[torch.Tensor] = None,
+        x_prev: torch.Tensor | None = None,
+        key_padding_mask: torch.Tensor | None = None,
+        attn_mask: torch.Tensor | None = None,
         *args,
         **kwargs,
     ) -> torch.Tensor:
@@ -490,17 +493,19 @@ class TransformerEncoder(nn.Module):
         x = x + self.drop_path(self.pre_norm_ffn(x))
         return x
 
+
 # ==============================================================================
 # RepMixer (from mobileclip/modules/text/repmixer.py)
 # ==============================================================================
+
 
 class ConvFFN(nn.Module):
     def __init__(
         self,
         in_channels: int,
         context_size: int,
-        hidden_channels: Optional[int] = None,
-        out_channels: Optional[int] = None,
+        hidden_channels: int | None = None,
+        out_channels: int | None = None,
         act_layer: nn.Module = nn.GELU,
         drop: float = 0.0,
     ) -> None:
@@ -688,7 +693,9 @@ class RepMixerBlock(nn.Module):
             x = x.permute(0, 2, 1)
             x = torch.unsqueeze(x, dim=2)
         else:
-            raise ValueError(f"Expected tensor of dim=3, obtained tensor of dim={x.dim()}")
+            raise ValueError(
+                f"Expected tensor of dim=3, obtained tensor of dim={x.dim()}"
+            )
 
         if self.use_layer_scale:
             x = self.token_mixer(x)
@@ -701,12 +708,21 @@ class RepMixerBlock(nn.Module):
         x = x.squeeze(dim=2).permute(0, 2, 1)
         return x
 
+
 # ==============================================================================
 # TextTransformer (from mobileclip/text_encoder.py)
 # ==============================================================================
 
+
 class MobileCLIPTextTransformer(nn.Module):
-    def __init__(self, cfg: dict, projection_dim: int, skip_embeddings: bool = False, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        cfg: dict,
+        projection_dim: int,
+        skip_embeddings: bool = False,
+        *args,
+        **kwargs,
+    ) -> None:
         super().__init__()
 
         model_dim = cfg["dim"]
@@ -780,7 +796,7 @@ class MobileCLIPTextTransformer(nn.Module):
             )
             self.transformer.extend([RepMixerBlock(dim=model_dim)])
         else:
-            raise ValueError("Unrecognized text encoder variant {}".format(variant))
+            raise ValueError(f"Unrecognized text encoder variant {variant}")
 
         self.final_layer_norm = get_normalization_layer(
             num_features=model_dim, norm_type=norm_layer
@@ -805,7 +821,9 @@ class MobileCLIPTextTransformer(nn.Module):
         token_emb = self.embedding_dropout(token_emb)
         return token_emb
 
-    def build_attention_mask(self, context_length: int, batch_size: int) -> torch.Tensor:
+    def build_attention_mask(
+        self, context_length: int, batch_size: int
+    ) -> torch.Tensor:
         mask = torch.empty(context_length, context_length)
         mask.fill_(float("-inf"))
         mask.triu_(1)
@@ -816,11 +834,11 @@ class MobileCLIPTextTransformer(nn.Module):
     def encode_text(
         self,
         text: torch.Tensor,
-        key_padding_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: torch.Tensor | None = None,
         return_all_tokens: bool = False,
         input_is_embeddings: bool = False,
         *args,
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         if input_is_embeddings:
             token_emb = text
@@ -850,17 +868,15 @@ class MobileCLIPTextTransformer(nn.Module):
         # If input is embeddings, we can't use text.argmax(dim=-1) to find EOT
         # We assume the caller handles pooling or we use the last token?
         # For now, if input_is_embeddings is True, we expect return_all_tokens=True usually.
-        # But if not, we need a way to find EOT. 
+        # But if not, we need a way to find EOT.
         # However, in our use case (SAM3), we always want all tokens.
-        
+
         if input_is_embeddings:
-             # Fallback to last token if not returning all
-             # But this path shouldn't be hit in SAM3 context
-             token_emb = token_emb[:, -1]
+            # Fallback to last token if not returning all
+            # But this path shouldn't be hit in SAM3 context
+            token_emb = token_emb[:, -1]
         else:
-            token_emb = token_emb[
-                torch.arange(text.shape[0]), text.argmax(dim=-1)
-            ]
+            token_emb = token_emb[torch.arange(text.shape[0]), text.argmax(dim=-1)]
 
         token_emb = token_emb @ self.projection_layer
         return token_emb
@@ -868,11 +884,11 @@ class MobileCLIPTextTransformer(nn.Module):
     def forward(
         self,
         text_tokens: torch.Tensor,
-        key_padding_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: torch.Tensor | None = None,
         return_all_tokens: bool = False,
         input_is_embeddings: bool = False,
         *args,
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         return self.encode_text(
             text=text_tokens,
@@ -880,5 +896,5 @@ class MobileCLIPTextTransformer(nn.Module):
             return_all_tokens=return_all_tokens,
             input_is_embeddings=input_is_embeddings,
             *args,
-            **kwargs
+            **kwargs,
         )

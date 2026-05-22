@@ -40,7 +40,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import torch
 from PIL import Image
@@ -49,13 +48,17 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sam3.coco_classes import COCO_CLASSES
-from sam3.model_builder import build_sam3_image_model
 from sam3.efficient_backbone import build_efficientsam3_model
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+from sam3.model_builder import build_sam3_image_model
 
-def _build_student_model(checkpoint, backbone_config, adapter_checkpoint, device, lora_rank=0):
+
+def _build_student_model(
+    checkpoint, backbone_config, adapter_checkpoint, device, lora_rank=0
+):
     """Build student model with distilled adapter weights."""
     from sam3.distillation.sam3_student import build_sam3_student_model
+
     model = build_sam3_student_model(
         backbone_config=backbone_config,
         teacher_checkpoint=checkpoint,
@@ -66,16 +69,18 @@ def _build_student_model(checkpoint, backbone_config, adapter_checkpoint, device
     )
     if lora_rank > 0:
         from sam3.distillation.lora import apply_lora
-        n = apply_lora(model.backbone.student_backbone.backbone, rank=lora_rank, alpha=lora_rank)
+
+        n = apply_lora(
+            model.backbone.student_backbone.backbone, rank=lora_rank, alpha=lora_rank
+        )
         print(f"  Applied LoRA (rank={lora_rank}) to {n} backbone layers")
     if adapter_checkpoint:
         print(f"  Loading adapter weights from {adapter_checkpoint}")
         ckpt = torch.load(adapter_checkpoint, map_location=device)
-        model.backbone.student_backbone.load_state_dict(
-            ckpt["student_state_dict"]
-        )
+        model.backbone.student_backbone.load_state_dict(ckpt["student_state_dict"])
     model.eval()
     return model
+
 
 try:
     from pycocotools.coco import COCO
@@ -93,7 +98,7 @@ MASK_16 = (
 )
 
 
-def parse_config(config_str: str) -> Dict:
+def parse_config(config_str: str) -> dict:
     """Parse config string into a dict.
 
     Formats:
@@ -102,8 +107,11 @@ def parse_config(config_str: str) -> Dict:
         "name=trt:bb.engine;mask:25:attn,...;imgsz:644"
     """
     result = {
-        "name": None, "trt": None, "encdec": None,
-        "mask_blocks": None, "imgsz": None,
+        "name": None,
+        "trt": None,
+        "encdec": None,
+        "mask_blocks": None,
+        "imgsz": None,
     }
 
     if "=" in config_str:
@@ -126,7 +134,7 @@ def parse_config(config_str: str) -> Dict:
     return result
 
 
-def apply_mask_config(trunk, mask_blocks_str: Optional[str]) -> int:
+def apply_mask_config(trunk, mask_blocks_str: str | None) -> int:
     """Toggle mask_attn/mask_mlp on trunk blocks. Returns count masked."""
     for blk in trunk.blocks:
         blk.mask_attn = False
@@ -151,23 +159,23 @@ def apply_mask_config(trunk, mask_blocks_str: Optional[str]) -> int:
 
 
 def evaluate_config(
-    config: Dict,
+    config: dict,
     model,
     coco_gt: COCO,
     image_dir: str,
-    img_ids: List[int],
-    class_names: List[str],
-    idx_to_cat_id: List[int],
+    img_ids: list[int],
+    class_names: list[str],
+    idx_to_cat_id: list[int],
     default_imgsz: int,
-    default_encdec: Optional[str],
+    default_encdec: str | None,
     trt_max_classes: int,
     confidence: float,
     nms_threshold: float,
     device: str,
-    text_cache: Optional[str],
+    text_cache: str | None,
     max_dets_per_img: int,
-    compile_mode: Optional[str] = None,
-) -> Dict:
+    compile_mode: str | None = None,
+) -> dict:
     """Run inference + COCO evaluation for one config."""
     name = config["name"]
     trt_engine = config["trt"]
@@ -176,22 +184,24 @@ def evaluate_config(
     imgsz = config["imgsz"] or default_imgsz
 
     # Apply pruning mask to backbone trunk (skip for student/efficient models)
-    trunk = getattr(getattr(model.backbone, 'vision_backbone', None), 'trunk', None)
-    if trunk is not None and hasattr(trunk, 'blocks'):
+    trunk = getattr(getattr(model.backbone, "vision_backbone", None), "trunk", None)
+    if trunk is not None and hasattr(trunk, "blocks"):
         n_masked = apply_mask_config(trunk, mask_str)
     else:
         n_masked = 0
 
     is_trt = trt_engine is not None
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Config: {name}")
-    print(f"  Backbone:  {'TRT ' + os.path.basename(trt_engine) if is_trt else 'PyTorch'}")
+    print(
+        f"  Backbone:  {'TRT ' + os.path.basename(trt_engine) if is_trt else 'PyTorch'}"
+    )
     print(f"  Enc-dec:   {'TRT ' + os.path.basename(encdec) if encdec else 'PyTorch'}")
     print(f"  Compile:   {compile_mode or 'disabled'}")
     print(f"  Resolution: {imgsz}")
     print(f"  Masked:    {n_masked} sub-blocks")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # Create predictor
     predictor = Sam3MultiClassPredictorFast(
@@ -216,7 +226,8 @@ def evaluate_config(
     for _ in range(3):
         state = predictor.set_image(warmup_img)
         predictor.predict(
-            state, confidence_threshold=confidence,
+            state,
+            confidence_threshold=confidence,
             nms_threshold=nms_threshold,
         )
 
@@ -226,8 +237,12 @@ def evaluate_config(
     total_ms = 0.0
     total_dets = 0
 
-    pbar = tqdm(img_ids, desc=f"  {name}", unit="img",
-                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}, {postfix}]")
+    pbar = tqdm(
+        img_ids,
+        desc=f"  {name}",
+        unit="img",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}, {postfix}]",
+    )
     for img_id in pbar:
         img_info = coco_gt.loadImgs(img_id)[0]
         img_path = os.path.join(image_dir, img_info["file_name"])
@@ -268,22 +283,24 @@ def evaluate_config(
                 x1, y1, x2, y2 = boxes[j].tolist()
                 cid = class_ids[j].item()
                 cat_id = idx_to_cat_id[cid]
-                coco_results.append({
-                    "image_id": img_id,
-                    "category_id": cat_id,
-                    "bbox": [
-                        round(x1, 2),
-                        round(y1, 2),
-                        round(x2 - x1, 2),  # width
-                        round(y2 - y1, 2),  # height
-                    ],
-                    "score": round(scores[j].item(), 5),
-                })
+                coco_results.append(
+                    {
+                        "image_id": img_id,
+                        "category_id": cat_id,
+                        "bbox": [
+                            round(x1, 2),
+                            round(y1, 2),
+                            round(x2 - x1, 2),  # width
+                            round(y2 - y1, 2),  # height
+                        ],
+                        "score": round(scores[j].item(), 5),
+                    }
+                )
                 total_dets += 1
 
         n_done = pbar.n
         if n_done > 0:
-            pbar.set_postfix_str(f"{total_ms/n_done:.0f}ms/img, {total_dets}dets")
+            pbar.set_postfix_str(f"{total_ms / n_done:.0f}ms/img, {total_dets}dets")
 
     pbar.close()
     avg_ms = total_ms / max(n_images, 1)
@@ -293,15 +310,19 @@ def evaluate_config(
     if not coco_results:
         print("  WARNING: No detections produced!")
         stats = {
-            "mAP": 0, "mAP50": 0, "mAP75": 0,
-            "mAP_small": 0, "mAP_medium": 0, "mAP_large": 0,
+            "mAP": 0,
+            "mAP50": 0,
+            "mAP75": 0,
+            "mAP_small": 0,
+            "mAP_medium": 0,
+            "mAP_large": 0,
         }
     else:
         results_file = f"_coco_results_{name}.json"
         with open(results_file, "w") as f:
             json.dump(coco_results, f)
 
-        print(f"\n  Running pycocotools evaluation ...")
+        print("\n  Running pycocotools evaluation ...")
         coco_dt = coco_gt.loadRes(results_file)
         coco_eval = COCOeval(coco_gt, coco_dt, "bbox")
         coco_eval.params.imgIds = img_ids  # Only evaluate on our subset
@@ -310,15 +331,15 @@ def evaluate_config(
         coco_eval.summarize()
 
         stats = {
-            "mAP": coco_eval.stats[0],        # AP @ IoU=0.50:0.95
-            "mAP50": coco_eval.stats[1],       # AP @ IoU=0.50
-            "mAP75": coco_eval.stats[2],       # AP @ IoU=0.75
-            "mAP_small": coco_eval.stats[3],   # AP small
+            "mAP": coco_eval.stats[0],  # AP @ IoU=0.50:0.95
+            "mAP50": coco_eval.stats[1],  # AP @ IoU=0.50
+            "mAP75": coco_eval.stats[2],  # AP @ IoU=0.75
+            "mAP_small": coco_eval.stats[3],  # AP small
             "mAP_medium": coco_eval.stats[4],  # AP medium
-            "mAP_large": coco_eval.stats[5],   # AP large
-            "AR1": coco_eval.stats[6],         # AR maxDets=1
-            "AR10": coco_eval.stats[7],        # AR maxDets=10
-            "AR100": coco_eval.stats[8],       # AR maxDets=100
+            "mAP_large": coco_eval.stats[5],  # AP large
+            "AR1": coco_eval.stats[6],  # AR maxDets=1
+            "AR10": coco_eval.stats[7],  # AR maxDets=10
+            "AR100": coco_eval.stats[8],  # AR maxDets=100
         }
 
         os.remove(results_file)
@@ -342,73 +363,103 @@ def main():
         description="Standard COCO val2017 evaluation with pycocotools",
     )
     parser.add_argument(
-        "--images-dir", required=True,
+        "--images-dir",
+        required=True,
         help="Directory containing val2017 images",
     )
     parser.add_argument(
-        "--ann-file", required=True,
+        "--ann-file",
+        required=True,
         help="Path to instances_val2017.json",
     )
     parser.add_argument("--checkpoint", default="sam3.pt")
     parser.add_argument(
-        "--max-images", type=int, default=5000,
+        "--max-images",
+        type=int,
+        default=5000,
         help="Max images to evaluate (default: 5000 = full val set)",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=1008,
+        "--imgsz",
+        type=int,
+        default=1008,
         help="Default resolution (configs can override)",
     )
     parser.add_argument(
-        "--confidence", type=float, default=0.01,
+        "--confidence",
+        type=float,
+        default=0.01,
         help="Confidence threshold (low for COCO eval, default: 0.01)",
     )
     parser.add_argument(
-        "--nms", type=float, default=0.7,
+        "--nms",
+        type=float,
+        default=0.7,
         help="NMS IoU threshold (per-class)",
     )
     parser.add_argument(
-        "--trt-enc-dec", type=str, default=None,
+        "--trt-enc-dec",
+        type=str,
+        default=None,
         help="Default TRT enc-dec engine (configs can override with encdec:)",
     )
     parser.add_argument("--trt-max-classes", type=int, default=80)
     parser.add_argument(
-        "--text-cache", type=str, default=None,
+        "--text-cache",
+        type=str,
+        default=None,
         help="Text embedding cache file (.pt)",
     )
     parser.add_argument(
-        "--configs", nargs="+", required=True,
-        help='Config specs (see module docstring for format)',
+        "--configs",
+        nargs="+",
+        required=True,
+        help="Config specs (see module docstring for format)",
     )
     parser.add_argument(
-        "--max-dets", type=int, default=300,
+        "--max-dets",
+        type=int,
+        default=300,
         help="Max detections per image to submit (default: 300)",
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
-        "--student-backbone", type=str, default=None,
+        "--student-backbone",
+        type=str,
+        default=None,
         choices=["efficientvit_l1", "efficientvit_l2", "repvit_m2_3", "tiny_vit_21m"],
         help="Use distilled student backbone instead of ViT-H",
     )
     parser.add_argument(
-        "--adapter-checkpoint", type=str, default=None,
+        "--adapter-checkpoint",
+        type=str,
+        default=None,
         help="Path to adapter weights (.pt) from distillation",
     )
     parser.add_argument(
-        "--lora-rank", type=int, default=0,
+        "--lora-rank",
+        type=int,
+        default=0,
         help="LoRA rank used during training (must match checkpoint)",
     )
     parser.add_argument(
-        "--compile-mode", type=str, default=None,
+        "--compile-mode",
+        type=str,
+        default=None,
         choices=["default", "reduce-overhead", "max-autotune"],
         help="torch.compile mode for encoder/decoder/backbone (default: None = disabled)",
     )
     parser.add_argument(
-        "--efficient-backbone", type=str, default=None,
+        "--efficient-backbone",
+        type=str,
+        default=None,
         choices=["efficientvit", "repvit", "tinyvit"],
         help="Use EfficientSAM3 lightweight backbone",
     )
     parser.add_argument(
-        "--efficient-model", type=str, default=None,
+        "--efficient-model",
+        type=str,
+        default=None,
         help="Backbone variant (e.g. b0/b1/b2, m0_9/m1_1/m2_3, 5m/11m/21m)",
     )
     args = parser.parse_args()
@@ -431,14 +482,14 @@ def main():
 
     # Select images
     all_img_ids = sorted(coco_gt.getImgIds())
-    img_ids = all_img_ids[:args.max_images]
+    img_ids = all_img_ids[: args.max_images]
     n_images = len(img_ids)
 
     # Parse configs
     configs = [parse_config(c) for c in args.configs]
 
     print(f"\nImages:     {n_images} / {len(all_img_ids)}")
-    print(f"Classes:    80 (COCO)")
+    print("Classes:    80 (COCO)")
     print(f"Default res: {args.imgsz}")
     print(f"Confidence: {args.confidence}")
     print(f"NMS:        {args.nms}")
@@ -452,7 +503,9 @@ def main():
         if not args.efficient_model:
             print("ERROR: --efficient-backbone requires --efficient-model")
             sys.exit(1)
-        print(f"\nLoading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model}) ...")
+        print(
+            f"\nLoading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model}) ..."
+        )
         model = build_efficientsam3_model(
             backbone_type=args.efficient_backbone,
             model_name=args.efficient_model,
@@ -502,9 +555,9 @@ def main():
 
     # Summary table
     W = 105
-    print(f"\n\n{'='*W}")
+    print(f"\n\n{'=' * W}")
     print(f"COCO val2017 EVALUATION  ({n_images} images, 80 classes, pycocotools)")
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     header = (
         f"  {'Config':<18s}  {'Res':>4s}  {'Pruned':>6s}  "
         f"{'mAP':>6s}  {'mAP50':>6s}  {'mAP75':>6s}  "
@@ -512,7 +565,7 @@ def main():
         f"{'Dets':>7s}  {'ms/img':>7s}"
     )
     print(header)
-    print(f"  {'-'*(W-2)}")
+    print(f"  {'-' * (W - 2)}")
 
     for r in all_results:
         print(
@@ -523,18 +576,20 @@ def main():
             f"{r['total_dets']:>7d}  {r['avg_ms']:>6.0f}ms"
         )
 
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     print(f"  conf={args.confidence}, NMS={args.nms}, max_dets={args.max_dets}")
 
     # Relative comparison
     if len(all_results) > 1:
         baseline = all_results[0]
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"RELATIVE (vs {baseline['name']}):")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         for r in all_results:
             rel_map = r["mAP"] / baseline["mAP"] * 100 if baseline["mAP"] > 0 else 0
-            rel_50 = r["mAP50"] / baseline["mAP50"] * 100 if baseline["mAP50"] > 0 else 0
+            rel_50 = (
+                r["mAP50"] / baseline["mAP50"] * 100 if baseline["mAP50"] > 0 else 0
+            )
             speedup = baseline["avg_ms"] / r["avg_ms"] if r["avg_ms"] > 0 else 0
             print(
                 f"  {r['name']:<18s}  "
@@ -542,7 +597,7 @@ def main():
                 f"mAP50={r['mAP50']:.3f} ({rel_50:5.1f}%)  "
                 f"speed={speedup:.2f}x"
             )
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
     # Save results JSON
     out_path = "coco_eval_results.json"

@@ -10,9 +10,10 @@ Key: Must patch RoPE to real-valued arithmetic first (complex64 unsupported).
 
 import sys
 import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -22,6 +23,7 @@ DTYPE = torch.float16
 
 class BackboneWrapper(nn.Module):
     """Wraps backbone to return tuple instead of dict."""
+
     def __init__(self, backbone):
         super().__init__()
         self.backbone = backbone
@@ -63,6 +65,7 @@ def benchmark(fn, dummy, warmup=10, iters=50):
 def test_torch_trt_dynamo(model, dummy, pt_ref, precision_label, enabled_precisions):
     """Test torch_tensorrt.compile with dynamo IR."""
     import torch_tensorrt
+
     from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
 
     print(f"\n{'=' * 80}")
@@ -82,10 +85,12 @@ def test_torch_trt_dynamo(model, dummy, pt_ref, precision_label, enabled_precisi
         compiled = torch_tensorrt.compile(
             wrapper,
             ir="dynamo",
-            inputs=[torch_tensorrt.Input(
-                shape=(1, 3, 1008, 1008),
-                dtype=torch.float32,
-            )],
+            inputs=[
+                torch_tensorrt.Input(
+                    shape=(1, 3, 1008, 1008),
+                    dtype=torch.float32,
+                )
+            ],
             enabled_precisions=enabled_precisions,
             workspace_size=4 << 30,
             truncate_long_and_double=True,
@@ -94,6 +99,7 @@ def test_torch_trt_dynamo(model, dummy, pt_ref, precision_label, enabled_precisi
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         unpatch_rope(backbone)
         return None, None
@@ -116,9 +122,10 @@ def test_torch_trt_dynamo(model, dummy, pt_ref, precision_label, enabled_precisi
     return cos, ms
 
 
-def test_torch_compile_trt_backend(model, dummy, pt_ref, precision_label, enabled_precisions):
+def test_torch_compile_trt_backend(
+    model, dummy, pt_ref, precision_label, enabled_precisions
+):
     """Test torch.compile with tensorrt backend."""
-    import torch_tensorrt  # noqa: registers backend
     from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
 
     print(f"\n{'=' * 80}")
@@ -148,6 +155,7 @@ def test_torch_compile_trt_backend(model, dummy, pt_ref, precision_label, enable
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         unpatch_rope(backbone)
         return None, None
@@ -156,9 +164,11 @@ def test_torch_compile_trt_backend(model, dummy, pt_ref, precision_label, enable
 
     # Benchmark
     print("  Benchmarking...")
+
     def run_fn(x):
         with torch.autocast("cuda", dtype=DTYPE):
             return compiled(x)
+
     ms = benchmark(run_fn, dummy)
 
     status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
@@ -171,6 +181,7 @@ def test_torch_compile_trt_backend(model, dummy, pt_ref, precision_label, enable
 def test_export_trt(model, dummy, pt_ref, precision_label, enabled_precisions):
     """Test torch.export -> torch_tensorrt.dynamo.compile."""
     import torch_tensorrt
+
     from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
 
     print(f"\n{'=' * 80}")
@@ -199,6 +210,7 @@ def test_export_trt(model, dummy, pt_ref, precision_label, enabled_precisions):
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         unpatch_rope(backbone)
         return None, None
@@ -226,7 +238,9 @@ def main():
 
     print("Loading SAM3 model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -235,9 +249,11 @@ def main():
 
     # Benchmark PyTorch eager FP16
     backbone = model.backbone
+
     def pt_eager(x):
         with torch.autocast("cuda", dtype=DTYPE):
             return backbone.forward_image(x)
+
     ms_eager = benchmark(pt_eager, dummy)
     print(f"  PyTorch eager FP16: {ms_eager:.1f}ms")
 
@@ -248,10 +264,14 @@ def main():
     # ================================================================
     try:
         cos, ms = test_torch_trt_dynamo(
-            model, dummy, pt_ref, "FP16",
+            model,
+            dummy,
+            pt_ref,
+            "FP16",
             {torch.float16},
         )
-        if cos: results["trt_dynamo_fp16"] = (cos, ms)
+        if cos:
+            results["trt_dynamo_fp16"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -263,10 +283,14 @@ def main():
     # ================================================================
     try:
         cos, ms = test_torch_trt_dynamo(
-            model, dummy, pt_ref, "FP16+FP32",
+            model,
+            dummy,
+            pt_ref,
+            "FP16+FP32",
             {torch.float16, torch.float32},
         )
-        if cos: results["trt_dynamo_fp16_fp32"] = (cos, ms)
+        if cos:
+            results["trt_dynamo_fp16_fp32"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -278,10 +302,14 @@ def main():
     # ================================================================
     try:
         cos, ms = test_torch_compile_trt_backend(
-            model, dummy, pt_ref, "FP16",
+            model,
+            dummy,
+            pt_ref,
+            "FP16",
             {torch.float16},
         )
-        if cos: results["compile_trt_fp16"] = (cos, ms)
+        if cos:
+            results["compile_trt_fp16"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -293,10 +321,14 @@ def main():
     # ================================================================
     try:
         cos, ms = test_export_trt(
-            model, dummy, pt_ref, "FP16",
+            model,
+            dummy,
+            pt_ref,
+            "FP16",
             {torch.float16},
         )
-        if cos: results["export_trt_fp16"] = (cos, ms)
+        if cos:
+            results["export_trt_fp16"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -308,10 +340,14 @@ def main():
     # ================================================================
     try:
         cos, ms = test_export_trt(
-            model, dummy, pt_ref, "FP16+FP32",
+            model,
+            dummy,
+            pt_ref,
+            "FP16+FP32",
             {torch.float16, torch.float32},
         )
-        if cos: results["export_trt_fp16_fp32"] = (cos, ms)
+        if cos:
+            results["export_trt_fp16_fp32"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -324,7 +360,9 @@ def main():
         print(f"  {'Approach':>25s} | {'FPN[-1] cos':>12s} | {'Speed':>7s} | Status")
         print("  " + "-" * 60)
         for name, (cos, ms) in sorted(results.items(), key=lambda x: x[1][1]):
-            status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
+            status = (
+                "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
+            )
             print(f"  {name:>25s} | {cos[-1]:>12.4f} | {ms:>5.1f}ms | {status}")
     else:
         print("  No successful approaches!")

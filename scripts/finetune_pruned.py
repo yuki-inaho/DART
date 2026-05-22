@@ -57,19 +57,18 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
+from PIL import Image
 from torch.amp import autocast
 from torch.cuda.amp import GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch.utils.data.distributed import DistributedSampler
-
-from PIL import Image
 from torchvision.transforms import v2
-
 
 # ---------------------------------------------------------------------------
 # Distributed helpers
 # ---------------------------------------------------------------------------
+
 
 def is_dist_initialized() -> bool:
     return dist.is_available() and dist.is_initialized()
@@ -120,89 +119,467 @@ def cleanup_distributed():
 # ---------------------------------------------------------------------------
 
 COCO_CLASSES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
-    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-    "baseball bat", "baseball glove", "skateboard", "surfboard",
-    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon",
-    "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
-    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
-    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
-    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-    "hair drier", "toothbrush",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 # LVIS categories (diverse subset covering rare/uncommon objects not in COCO)
 LVIS_EXTRA_CLASSES = [
     # animals
-    "alpaca", "antelope", "armadillo", "badger", "bat", "beaver", "bison",
-    "buffalo", "bull", "camel", "canary", "cheetah", "chicken", "chimpanzee",
-    "cobra", "crab", "crocodile", "crow", "deer", "dolphin", "donkey",
-    "dragonfly", "duck", "eagle", "eel", "falcon", "flamingo", "fox",
-    "frog", "gazelle", "goat", "goldfish", "goose", "gorilla", "hamster",
-    "hawk", "hedgehog", "hippopotamus", "hornet", "hummingbird", "hyena",
-    "iguana", "jaguar", "jellyfish", "kangaroo", "koala", "ladybug",
-    "leopard", "lion", "lizard", "llama", "lobster", "lynx", "monkey",
-    "moose", "moth", "octopus", "ostrich", "otter", "owl", "oyster",
-    "panda", "parrot", "peacock", "pelican", "penguin", "pig", "pigeon",
-    "porcupine", "rabbit", "raccoon", "rat", "raven", "rhinoceros",
-    "rooster", "salamander", "salmon", "scorpion", "seahorse", "seal",
-    "shark", "snail", "snake", "sparrow", "spider", "squid", "squirrel",
-    "starfish", "stork", "swan", "tiger", "tortoise", "toucan", "trout",
-    "turkey", "turtle", "vulture", "walrus", "whale", "wolf", "worm",
+    "alpaca",
+    "antelope",
+    "armadillo",
+    "badger",
+    "bat",
+    "beaver",
+    "bison",
+    "buffalo",
+    "bull",
+    "camel",
+    "canary",
+    "cheetah",
+    "chicken",
+    "chimpanzee",
+    "cobra",
+    "crab",
+    "crocodile",
+    "crow",
+    "deer",
+    "dolphin",
+    "donkey",
+    "dragonfly",
+    "duck",
+    "eagle",
+    "eel",
+    "falcon",
+    "flamingo",
+    "fox",
+    "frog",
+    "gazelle",
+    "goat",
+    "goldfish",
+    "goose",
+    "gorilla",
+    "hamster",
+    "hawk",
+    "hedgehog",
+    "hippopotamus",
+    "hornet",
+    "hummingbird",
+    "hyena",
+    "iguana",
+    "jaguar",
+    "jellyfish",
+    "kangaroo",
+    "koala",
+    "ladybug",
+    "leopard",
+    "lion",
+    "lizard",
+    "llama",
+    "lobster",
+    "lynx",
+    "monkey",
+    "moose",
+    "moth",
+    "octopus",
+    "ostrich",
+    "otter",
+    "owl",
+    "oyster",
+    "panda",
+    "parrot",
+    "peacock",
+    "pelican",
+    "penguin",
+    "pig",
+    "pigeon",
+    "porcupine",
+    "rabbit",
+    "raccoon",
+    "rat",
+    "raven",
+    "rhinoceros",
+    "rooster",
+    "salamander",
+    "salmon",
+    "scorpion",
+    "seahorse",
+    "seal",
+    "shark",
+    "snail",
+    "snake",
+    "sparrow",
+    "spider",
+    "squid",
+    "squirrel",
+    "starfish",
+    "stork",
+    "swan",
+    "tiger",
+    "tortoise",
+    "toucan",
+    "trout",
+    "turkey",
+    "turtle",
+    "vulture",
+    "walrus",
+    "whale",
+    "wolf",
+    "worm",
     # food & drink
-    "avocado", "bagel", "baguette", "beer", "blueberry", "bread",
-    "burrito", "butter", "cabbage", "candy", "cantaloupe", "celery",
-    "cheese", "cherry", "chocolate", "coconut", "cookie", "corn",
-    "cracker", "croissant", "cucumber", "cupcake", "egg", "fig",
-    "garlic", "grape", "grapefruit", "hamburger", "honey", "ice cream",
-    "jam", "ketchup", "lemon", "lettuce", "lime", "mango", "marshmallow",
-    "melon", "milk", "muffin", "mushroom", "noodle", "olive", "onion",
-    "pancake", "pasta", "peach", "peanut", "pear", "pepper", "pickle",
-    "pie", "pineapple", "plum", "pomegranate", "popcorn", "potato",
-    "pretzel", "pumpkin", "radish", "raspberry", "rice", "salad",
-    "sausage", "spinach", "steak", "strawberry", "sushi", "taco",
-    "tea", "tomato", "waffle", "watermelon", "yogurt", "zucchini",
+    "avocado",
+    "bagel",
+    "baguette",
+    "beer",
+    "blueberry",
+    "bread",
+    "burrito",
+    "butter",
+    "cabbage",
+    "candy",
+    "cantaloupe",
+    "celery",
+    "cheese",
+    "cherry",
+    "chocolate",
+    "coconut",
+    "cookie",
+    "corn",
+    "cracker",
+    "croissant",
+    "cucumber",
+    "cupcake",
+    "egg",
+    "fig",
+    "garlic",
+    "grape",
+    "grapefruit",
+    "hamburger",
+    "honey",
+    "ice cream",
+    "jam",
+    "ketchup",
+    "lemon",
+    "lettuce",
+    "lime",
+    "mango",
+    "marshmallow",
+    "melon",
+    "milk",
+    "muffin",
+    "mushroom",
+    "noodle",
+    "olive",
+    "onion",
+    "pancake",
+    "pasta",
+    "peach",
+    "peanut",
+    "pear",
+    "pepper",
+    "pickle",
+    "pie",
+    "pineapple",
+    "plum",
+    "pomegranate",
+    "popcorn",
+    "potato",
+    "pretzel",
+    "pumpkin",
+    "radish",
+    "raspberry",
+    "rice",
+    "salad",
+    "sausage",
+    "spinach",
+    "steak",
+    "strawberry",
+    "sushi",
+    "taco",
+    "tea",
+    "tomato",
+    "waffle",
+    "watermelon",
+    "yogurt",
+    "zucchini",
     # household & objects
-    "alarm clock", "anvil", "axe", "balloon", "bandage", "barrel",
-    "basket", "bathrobe", "bathtub", "beacon", "belt", "binder",
-    "blanket", "blender", "blinds", "bookshelf", "broom", "brush",
-    "bucket", "bulletin board", "calculator", "calendar", "candle",
-    "canteen", "cardboard", "carpet", "cart", "cassette", "chandelier",
-    "clipboard", "comb", "compass", "cooler", "cork", "corkscrew",
-    "crayon", "crib", "crown", "curtain", "cushion", "dartboard",
-    "doorbell", "drawer", "drum", "dumbbell", "dustpan", "envelope",
-    "eraser", "fan", "faucet", "fence", "fire extinguisher", "fishing rod",
-    "flag", "flashlight", "flowerpot", "flute", "funnel", "globe",
-    "guitar", "hammer", "hanger", "harmonica", "harp", "helmet",
-    "horn", "hourglass", "iron", "jar", "kettle", "ladder",
-    "lamp", "lantern", "lighter", "lock", "magazine", "mailbox",
-    "map", "marker", "mat", "matchbox", "medal", "mirror",
-    "mop", "napkin", "needle", "newspaper", "notebook", "paddle",
-    "paintbrush", "palette", "pan", "paper towel", "pen", "pencil",
-    "piano", "pillow", "pipe", "plate", "pliers", "poster",
-    "radio", "razor", "ribbon", "rope", "rubber band", "rug",
-    "ruler", "scale", "screwdriver", "shampoo", "shelf", "shield",
-    "shoe", "shovel", "soap", "socket", "spatula", "sponge",
-    "stapler", "stool", "stove", "straw", "suitcase", "sunglasses",
-    "sword", "syringe", "tape", "teapot", "telephone", "tent",
-    "thermometer", "tissue", "toilet paper", "toolbox", "tray",
-    "trophy", "tweezers", "vacuum cleaner", "wallet", "washing machine",
-    "watch", "wheelbarrow", "whistle", "wig", "window", "wrench",
+    "alarm clock",
+    "anvil",
+    "axe",
+    "balloon",
+    "bandage",
+    "barrel",
+    "basket",
+    "bathrobe",
+    "bathtub",
+    "beacon",
+    "belt",
+    "binder",
+    "blanket",
+    "blender",
+    "blinds",
+    "bookshelf",
+    "broom",
+    "brush",
+    "bucket",
+    "bulletin board",
+    "calculator",
+    "calendar",
+    "candle",
+    "canteen",
+    "cardboard",
+    "carpet",
+    "cart",
+    "cassette",
+    "chandelier",
+    "clipboard",
+    "comb",
+    "compass",
+    "cooler",
+    "cork",
+    "corkscrew",
+    "crayon",
+    "crib",
+    "crown",
+    "curtain",
+    "cushion",
+    "dartboard",
+    "doorbell",
+    "drawer",
+    "drum",
+    "dumbbell",
+    "dustpan",
+    "envelope",
+    "eraser",
+    "fan",
+    "faucet",
+    "fence",
+    "fire extinguisher",
+    "fishing rod",
+    "flag",
+    "flashlight",
+    "flowerpot",
+    "flute",
+    "funnel",
+    "globe",
+    "guitar",
+    "hammer",
+    "hanger",
+    "harmonica",
+    "harp",
+    "helmet",
+    "horn",
+    "hourglass",
+    "iron",
+    "jar",
+    "kettle",
+    "ladder",
+    "lamp",
+    "lantern",
+    "lighter",
+    "lock",
+    "magazine",
+    "mailbox",
+    "map",
+    "marker",
+    "mat",
+    "matchbox",
+    "medal",
+    "mirror",
+    "mop",
+    "napkin",
+    "needle",
+    "newspaper",
+    "notebook",
+    "paddle",
+    "paintbrush",
+    "palette",
+    "pan",
+    "paper towel",
+    "pen",
+    "pencil",
+    "piano",
+    "pillow",
+    "pipe",
+    "plate",
+    "pliers",
+    "poster",
+    "radio",
+    "razor",
+    "ribbon",
+    "rope",
+    "rubber band",
+    "rug",
+    "ruler",
+    "scale",
+    "screwdriver",
+    "shampoo",
+    "shelf",
+    "shield",
+    "shoe",
+    "shovel",
+    "soap",
+    "socket",
+    "spatula",
+    "sponge",
+    "stapler",
+    "stool",
+    "stove",
+    "straw",
+    "suitcase",
+    "sunglasses",
+    "sword",
+    "syringe",
+    "tape",
+    "teapot",
+    "telephone",
+    "tent",
+    "thermometer",
+    "tissue",
+    "toilet paper",
+    "toolbox",
+    "tray",
+    "trophy",
+    "tweezers",
+    "vacuum cleaner",
+    "wallet",
+    "washing machine",
+    "watch",
+    "wheelbarrow",
+    "whistle",
+    "wig",
+    "window",
+    "wrench",
     # vehicles & outdoor
-    "ambulance", "anchor", "barge", "canoe", "crane", "excavator",
-    "fire truck", "forklift", "golf cart", "helicopter", "jet ski",
-    "kayak", "limousine", "minivan", "parachute", "pickup truck",
-    "rickshaw", "rowboat", "sailboat", "scooter", "submarine",
-    "taxi", "tractor", "tricycle", "van", "wheelchair",
+    "ambulance",
+    "anchor",
+    "barge",
+    "canoe",
+    "crane",
+    "excavator",
+    "fire truck",
+    "forklift",
+    "golf cart",
+    "helicopter",
+    "jet ski",
+    "kayak",
+    "limousine",
+    "minivan",
+    "parachute",
+    "pickup truck",
+    "rickshaw",
+    "rowboat",
+    "sailboat",
+    "scooter",
+    "submarine",
+    "taxi",
+    "tractor",
+    "tricycle",
+    "van",
+    "wheelchair",
     # structures & scenes
-    "arch", "barn", "bridge", "cabin", "castle", "church",
-    "dome", "fountain", "garage", "gazebo", "greenhouse", "lighthouse",
-    "monument", "parking meter", "pier", "playground", "podium",
-    "pyramid", "skyscraper", "staircase", "statue", "tower", "tunnel",
+    "arch",
+    "barn",
+    "bridge",
+    "cabin",
+    "castle",
+    "church",
+    "dome",
+    "fountain",
+    "garage",
+    "gazebo",
+    "greenhouse",
+    "lighthouse",
+    "monument",
+    "parking meter",
+    "pier",
+    "playground",
+    "podium",
+    "pyramid",
+    "skyscraper",
+    "staircase",
+    "statue",
+    "tower",
+    "tunnel",
     "windmill",
 ]
 
@@ -214,6 +591,7 @@ ALL_CLASSES = list(dict.fromkeys(COCO_CLASSES + LVIS_EXTRA_CLASSES))
 # Dataset
 # ---------------------------------------------------------------------------
 
+
 class ImageFolderDataset(Dataset):
     """Load images from a directory (no labels needed)."""
 
@@ -224,16 +602,21 @@ class ImageFolderDataset(Dataset):
         self.resolution = resolution
         self.image_paths = []
         for entry in os.scandir(root):
-            if entry.is_file() and os.path.splitext(entry.name)[1].lower() in self.IMAGE_EXTENSIONS:
+            if (
+                entry.is_file()
+                and os.path.splitext(entry.name)[1].lower() in self.IMAGE_EXTENSIONS
+            ):
                 self.image_paths.append(entry.path)
         self.image_paths.sort()
 
-        self.transform = v2.Compose([
-            v2.ToDtype(torch.uint8, scale=True),
-            v2.Resize(size=(resolution, resolution)),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ])
+        self.transform = v2.Compose(
+            [
+                v2.ToDtype(torch.uint8, scale=True),
+                v2.Resize(size=(resolution, resolution)),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
 
     def __len__(self):
         return len(self.image_paths)
@@ -248,6 +631,7 @@ class ImageFolderDataset(Dataset):
 # ---------------------------------------------------------------------------
 # DDP-compatible wrapper for trainable modules
 # ---------------------------------------------------------------------------
+
 
 class StudentForward(nn.Module):
     """Wraps all trainable student modules into one forward pass for DDP.
@@ -271,8 +655,15 @@ class StudentForward(nn.Module):
         self.dot_prod_scoring = dot_prod_scoring
         self.student_backbone = student_backbone  # None = shared backbone mode
 
-    def forward(self, img_feats, img_pos_embeds, vis_feat_sizes, prompt, prompt_mask,
-                images=None):
+    def forward(
+        self,
+        img_feats,
+        img_pos_embeds,
+        vis_feat_sizes,
+        prompt,
+        prompt_mask,
+        images=None,
+    ):
         """Run [backbone ->] encoder -> decoder -> bbox_embed -> scoring.
 
         When self.student_backbone is set and images is provided, the backbone
@@ -289,9 +680,13 @@ class StudentForward(nn.Module):
             vis_feats = backbone_fpn[-1:]  # num_feature_levels=1
             vis_pos_enc = backbone_out["vision_pos_enc"][-1:]
             vis_feat_sizes = [x.shape[-2:] for x in vis_pos_enc]
-            img_ids = torch.arange(images.shape[0], device=images.device, dtype=torch.long)
+            img_ids = torch.arange(
+                images.shape[0], device=images.device, dtype=torch.long
+            )
             img_feats = [x[img_ids].flatten(2).permute(2, 0, 1) for x in vis_feats]
-            img_pos_embeds = [x[img_ids].flatten(2).permute(2, 0, 1) for x in vis_pos_enc]
+            img_pos_embeds = [
+                x[img_ids].flatten(2).permute(2, 0, 1) for x in vis_pos_enc
+            ]
 
         # --- Encoder ---
         prompt_pos = torch.zeros_like(prompt)
@@ -350,6 +745,7 @@ class StudentForward(nn.Module):
 # ---------------------------------------------------------------------------
 # Distillation trainer
 # ---------------------------------------------------------------------------
+
 
 class PrunedModelFinetuner:
     """Knowledge distillation from unpruned (teacher) to pruned (student) SAM3.
@@ -431,11 +827,15 @@ class PrunedModelFinetuner:
         # Collect trainable parameters
         trainable_params = list(self._trainable_module().parameters())
         num_trainable = sum(p.numel() for p in trainable_params)
-        dist_print(f"Trainable parameters: {num_trainable:,} ({num_trainable/1e6:.1f}M)")
+        dist_print(
+            f"Trainable parameters: {num_trainable:,} ({num_trainable / 1e6:.1f}M)"
+        )
         dist_print(f"Trainable tensors: {len(trainable_params)}")
 
         self.optimizer = torch.optim.AdamW(
-            trainable_params, lr=lr, weight_decay=weight_decay,
+            trainable_params,
+            lr=lr,
+            weight_decay=weight_decay,
         )
         self.scaler = GradScaler()
 
@@ -472,16 +872,19 @@ class PrunedModelFinetuner:
     @torch.no_grad()
     def _precompute_text_embeddings(self):
         """Pre-compute text embeddings for all classes (COCO + LVIS)."""
-        dist_print(f"Pre-computing text embeddings for {len(ALL_CLASSES)} classes "
-                   f"({len(COCO_CLASSES)} COCO + {len(LVIS_EXTRA_CLASSES)} LVIS)...")
+        dist_print(
+            f"Pre-computing text embeddings for {len(ALL_CLASSES)} classes "
+            f"({len(COCO_CLASSES)} COCO + {len(LVIS_EXTRA_CLASSES)} LVIS)..."
+        )
         # Process in chunks to avoid OOM on the text encoder
         chunk_size = 100
         all_feats = []
         all_masks = []
         for i in range(0, len(ALL_CLASSES), chunk_size):
-            chunk = ALL_CLASSES[i:i + chunk_size]
+            chunk = ALL_CLASSES[i : i + chunk_size]
             text_outputs = self.teacher.backbone.forward_text(
-                chunk, device=self.device,
+                chunk,
+                device=self.device,
             )
             all_feats.append(text_outputs["language_features"])
             all_masks.append(text_outputs["language_mask"])
@@ -489,8 +892,10 @@ class PrunedModelFinetuner:
         self.all_text_feats = torch.cat(all_feats, dim=1)  # (seq, total_classes, d)
         self.all_text_masks = torch.cat(all_masks, dim=0)  # (total_classes, seq)
         self.num_classes = self.all_text_feats.shape[1]
-        dist_print(f"  Text features shape: {self.all_text_feats.shape} "
-                   f"({self.num_classes} classes)")
+        dist_print(
+            f"  Text features shape: {self.all_text_feats.shape} "
+            f"({self.num_classes} classes)"
+        )
 
     def _sample_text_prompts(self, n):
         """Sample n random class text prompts. Returns (prompt, mask) lists."""
@@ -498,11 +903,13 @@ class PrunedModelFinetuner:
         prompts = []
         masks = []
         for idx in indices:
-            prompts.append(self.all_text_feats[:, idx:idx+1, :])  # (seq, 1, d)
-            masks.append(self.all_text_masks[idx:idx+1, :])  # (1, seq)
+            prompts.append(self.all_text_feats[:, idx : idx + 1, :])  # (seq, 1, d)
+            masks.append(self.all_text_masks[idx : idx + 1, :])  # (1, seq)
         return prompts, masks
 
-    def _run_teacher(self, img_feats, img_pos_embeds, vis_feat_sizes, prompt, prompt_mask):
+    def _run_teacher(
+        self, img_feats, img_pos_embeds, vis_feat_sizes, prompt, prompt_mask
+    ):
         """Run frozen teacher encoder -> decoder -> bbox_embed -> scoring (no grad).
 
         Returns dict with all intermediate outputs matching StudentForward output format.
@@ -562,8 +969,10 @@ class PrunedModelFinetuner:
         losses = {}
 
         # 0. Backbone feature loss (only when using student backbone)
-        if (student_out.get("backbone_fpn") is not None
-                and teacher_backbone_fpn is not None):
+        if (
+            student_out.get("backbone_fpn") is not None
+            and teacher_backbone_fpn is not None
+        ):
             bb_loss = torch.tensor(0.0, device=self.device)
             s_fpn = student_out["backbone_fpn"]
             t_fpn = teacher_backbone_fpn
@@ -575,8 +984,10 @@ class PrunedModelFinetuner:
                 # Interpolate if spatial sizes differ
                 if s_feat.shape[-2:] != t_feat.shape[-2:]:
                     s_feat = F.interpolate(
-                        s_feat, size=t_feat.shape[-2:],
-                        mode="bilinear", align_corners=False,
+                        s_feat,
+                        size=t_feat.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
                     )
                 bb_loss = bb_loss + F.mse_loss(s_feat, t_feat)
             losses["backbone"] = bb_loss / max(n, 1)
@@ -605,8 +1016,7 @@ class PrunedModelFinetuner:
         # e.g. if teacher has 6 layers, student has 3: map student [0,1,2] -> teacher [1,3,5]
         if s_layers < t_layers:
             layer_map = [
-                int(round((i + 1) * t_layers / s_layers)) - 1
-                for i in range(s_layers)
+                round((i + 1) * t_layers / s_layers) - 1 for i in range(s_layers)
             ]
         else:
             layer_map = list(range(s_layers))
@@ -674,7 +1084,8 @@ class PrunedModelFinetuner:
             for s_idx, t_idx in enumerate(layer_map):
                 if t_idx < t_pres.shape[0] and s_idx < s_pres.shape[0]:
                     presence_loss = presence_loss + F.mse_loss(
-                        s_pres[s_idx], t_pres[t_idx],
+                        s_pres[s_idx],
+                        t_pres[t_idx],
                     )
             presence_loss = presence_loss / max(len(layer_map), 1)
             losses["presence"] = presence_loss
@@ -700,7 +1111,17 @@ class PrunedModelFinetuner:
             return (step + 1) / self.warmup_steps
         return 1.0
 
-    LOSS_KEYS = ["total", "backbone", "encoder", "prompt", "decoder_hs", "refbox", "boxpred", "scoring", "presence"]
+    LOSS_KEYS = [
+        "total",
+        "backbone",
+        "encoder",
+        "prompt",
+        "decoder_hs",
+        "refbox",
+        "boxpred",
+        "scoring",
+        "presence",
+    ]
 
     def train_epoch(self, epoch, total_epochs):
         """Run one epoch of distillation training."""
@@ -710,7 +1131,7 @@ class PrunedModelFinetuner:
         if self.sampler is not None:
             self.sampler.set_epoch(epoch)
 
-        epoch_losses = {k: 0.0 for k in self.LOSS_KEYS}
+        epoch_losses = dict.fromkeys(self.LOSS_KEYS, 0.0)
         num_batches = 0
         start_time = time.time()
 
@@ -730,7 +1151,9 @@ class PrunedModelFinetuner:
             with torch.no_grad():
                 teacher_backbone_out = self.teacher.backbone.forward_image(images)
 
-            img_ids = torch.arange(images.shape[0], device=self.device, dtype=torch.long)
+            img_ids = torch.arange(
+                images.shape[0], device=self.device, dtype=torch.long
+            )
             _, teacher_img_feats, teacher_img_pos_embeds, teacher_vis_feat_sizes = (
                 self.teacher._get_img_feats(teacher_backbone_out, img_ids)
             )
@@ -754,7 +1177,9 @@ class PrunedModelFinetuner:
             bs = images.shape[0]
 
             # Accumulate losses over multiple prompts per batch
-            batch_losses = {k: torch.tensor(0.0, device=self.device) for k in self.LOSS_KEYS}
+            batch_losses = {
+                k: torch.tensor(0.0, device=self.device) for k in self.LOSS_KEYS
+            }
 
             for prompt, prompt_mask in zip(prompts, masks):
                 prompt = prompt.expand(-1, bs, -1).contiguous()
@@ -763,20 +1188,27 @@ class PrunedModelFinetuner:
                 # --- Teacher forward (no grad, uses teacher features) ---
                 with torch.no_grad():
                     teacher_out = self._run_teacher(
-                        teacher_img_feats, teacher_img_pos_embeds,
-                        teacher_vis_feat_sizes, prompt, prompt_mask,
+                        teacher_img_feats,
+                        teacher_img_pos_embeds,
+                        teacher_vis_feat_sizes,
+                        prompt,
+                        prompt_mask,
                     )
 
                 # --- Student forward (with grad, through DDP wrapper) ---
                 with autocast("cuda", dtype=torch.float16):
                     student_out = self.student_forward(
-                        student_img_feats, student_img_pos_embeds,
-                        student_vis_feat_sizes, prompt, prompt_mask,
+                        student_img_feats,
+                        student_img_pos_embeds,
+                        student_vis_feat_sizes,
+                        prompt,
+                        prompt_mask,
                         images=images if self.use_student_backbone else None,
                     )
 
                     losses = self._compute_loss(
-                        teacher_out, student_out,
+                        teacher_out,
+                        student_out,
                         teacher_backbone_fpn=teacher_backbone_fpn,
                     )
 
@@ -812,7 +1244,7 @@ class PrunedModelFinetuner:
                 if self.use_student_backbone:
                     bb_str = f"bb: {reduce_scalar(batch_losses['backbone'].item(), self.device):.4f} | "
                 dist_print(
-                    f"  [{epoch+1}/{total_epochs}] batch {batch_idx+1}/{len(self.dataloader)} | "
+                    f"  [{epoch + 1}/{total_epochs}] batch {batch_idx + 1}/{len(self.dataloader)} | "
                     f"loss: {reduce_scalar(batch_losses['total'].item(), self.device):.4f} "
                     f"(avg: {avg_loss:.4f}) | "
                     f"{bb_str}"
@@ -834,7 +1266,7 @@ class PrunedModelFinetuner:
         if self.use_student_backbone:
             bb_str = f"bb: {epoch_losses['backbone']:.4f} | "
         dist_print(
-            f"Epoch {epoch+1}/{total_epochs} done in {elapsed:.0f}s | "
+            f"Epoch {epoch + 1}/{total_epochs} done in {elapsed:.0f}s | "
             f"avg_loss: {epoch_losses['total']:.4f} | "
             f"{bb_str}"
             f"enc: {epoch_losses['encoder']:.4f} | "
@@ -847,8 +1279,9 @@ class PrunedModelFinetuner:
         )
         return epoch_losses
 
-    def save_checkpoint(self, path, pruning_config, epoch, losses,
-                        backbone_config=None):
+    def save_checkpoint(
+        self, path, pruning_config, epoch, losses, backbone_config=None
+    ):
         """Save student checkpoint (rank 0 only)."""
         if not is_main_process():
             return
@@ -874,6 +1307,7 @@ class PrunedModelFinetuner:
 # Worker function (one per GPU)
 # ---------------------------------------------------------------------------
 
+
 def worker(rank, world_size, args):
     """Per-GPU training worker, launched by mp.spawn."""
     # --- Distributed init ---
@@ -892,21 +1326,26 @@ def worker(rank, world_size, args):
     dist_print("=" * 60)
     dist_print("SAM3 Pruned Model Fine-tuning via Distillation")
     dist_print(f"  World size: {world_size} | Device: {device}")
-    dist_print(f"  Text prompts: {len(ALL_CLASSES)} classes "
-               f"({len(COCO_CLASSES)} COCO + {len(LVIS_EXTRA_CLASSES)} LVIS)")
+    dist_print(
+        f"  Text prompts: {len(ALL_CLASSES)} classes "
+        f"({len(COCO_CLASSES)} COCO + {len(LVIS_EXTRA_CLASSES)} LVIS)"
+    )
     dist_print(f"  Prompts per batch: {args.num_prompts}")
     if use_student_bb:
         dist_print(f"  Student backbone: {args.student_backbone}")
     else:
-        dist_print(f"  Backbone: shared ViT-H (teacher)")
+        dist_print("  Backbone: shared ViT-H (teacher)")
     dist_print("=" * 60)
 
     # --- Load pruning config ---
     from sam3.model_builder import load_pruned_config
+
     pruning_config = load_pruned_config(args.pruned_checkpoint)
     if pruning_config is None:
         dist_print("ERROR: No pruning_config found in checkpoint.")
-        dist_print("This script requires a pruned checkpoint from analyze_pruning.py --apply")
+        dist_print(
+            "This script requires a pruned checkpoint from analyze_pruning.py --apply"
+        )
         cleanup_distributed()
         sys.exit(1)
     dist_print(f"Pruning config: {pruning_config}")
@@ -914,6 +1353,7 @@ def worker(rank, world_size, args):
     # --- Build teacher model (unpruned) ---
     dist_print("\nBuilding teacher model (unpruned)...")
     from sam3.model_builder import build_sam3_image_model
+
     # Use device="cuda" (not f"cuda:{rank}") because _setup_device_and_mode
     # checks `device == "cuda"` exactly. torch.cuda.set_device(rank) already
     # ensures .cuda() routes to the correct GPU.
@@ -930,6 +1370,7 @@ def worker(rank, world_size, args):
     # --- Build student model (pruned) ---
     dist_print("\nBuilding student model (pruned)...")
     from sam3.model_builder import build_pruned_sam3_image_model
+
     student = build_pruned_sam3_image_model(
         checkpoint_path=args.pruned_checkpoint,
         pruning_config=pruning_config,
@@ -942,13 +1383,16 @@ def worker(rank, world_size, args):
     enc_params = sum(p.numel() for p in student.transformer.encoder.parameters())
     dec_params = sum(p.numel() for p in student.transformer.decoder.parameters())
     scoring_params = sum(p.numel() for p in student.dot_prod_scoring.parameters())
-    dist_print(f"  Encoder: {enc_params:,} | Decoder: {dec_params:,} | Scoring: {scoring_params:,}")
+    dist_print(
+        f"  Encoder: {enc_params:,} | Decoder: {dec_params:,} | Scoring: {scoring_params:,}"
+    )
 
     # --- Backbone setup ---
     student_backbone = None
     if use_student_bb:
         dist_print(f"\nBuilding student backbone: {args.student_backbone}")
         from sam3.distillation.student_backbone import build_student_backbone
+
         student_backbone = build_student_backbone(
             config_name=args.student_backbone,
             pretrained=True,
@@ -956,7 +1400,9 @@ def worker(rank, world_size, args):
         )
         student_backbone = student_backbone.to(device)
         adapter_params = student_backbone.trainable_params
-        dist_print(f"  Student backbone adapter params: {adapter_params:,} ({adapter_params/1e6:.1f}M)")
+        dist_print(
+            f"  Student backbone adapter params: {adapter_params:,} ({adapter_params / 1e6:.1f}M)"
+        )
         # Still share the text encoder from teacher for text embedding
         # (student backbone only replaces vision, not text)
     else:
@@ -975,7 +1421,10 @@ def worker(rank, world_size, args):
         dist_print(f"  Using subset of {len(dataset)} images")
 
     sampler = DistributedSampler(
-        dataset, num_replicas=world_size, rank=rank, shuffle=True,
+        dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True,
     )
 
     dataloader = DataLoader(
@@ -1019,23 +1468,40 @@ def worker(rank, world_size, args):
         losses = trainer.train_epoch(epoch, args.epochs)
 
         if (epoch + 1) % args.save_every == 0:
-            ckpt_path = os.path.join(args.output_dir, f"finetuned_epoch{epoch+1}.pt")
-            trainer.save_checkpoint(ckpt_path, pruning_config, epoch + 1, losses,
-                                    backbone_config=args.student_backbone)
+            ckpt_path = os.path.join(args.output_dir, f"finetuned_epoch{epoch + 1}.pt")
+            trainer.save_checkpoint(
+                ckpt_path,
+                pruning_config,
+                epoch + 1,
+                losses,
+                backbone_config=args.student_backbone,
+            )
 
         if losses["total"] < best_loss:
             best_loss = losses["total"]
-            trainer.save_checkpoint(best_path, pruning_config, epoch + 1, losses,
-                                    backbone_config=args.student_backbone)
+            trainer.save_checkpoint(
+                best_path,
+                pruning_config,
+                epoch + 1,
+                losses,
+                backbone_config=args.student_backbone,
+            )
             dist_print(f"  New best loss: {best_loss:.4f}")
 
     final_path = os.path.join(args.output_dir, "finetuned_final.pt")
-    trainer.save_checkpoint(final_path, pruning_config, args.epochs, losses,
-                            backbone_config=args.student_backbone)
+    trainer.save_checkpoint(
+        final_path,
+        pruning_config,
+        args.epochs,
+        losses,
+        backbone_config=args.student_backbone,
+    )
 
     dist_print(f"\nDone! Best loss: {best_loss:.4f}")
-    dist_print(f"Use the finetuned checkpoint with demo_multiclass.py:")
-    dist_print(f"  python demo_multiclass.py --image x.jpg --classes person car --checkpoint {best_path}")
+    dist_print("Use the finetuned checkpoint with demo_multiclass.py:")
+    dist_print(
+        f"  python demo_multiclass.py --image x.jpg --classes person car --checkpoint {best_path}"
+    )
 
     cleanup_distributed()
 
@@ -1043,6 +1509,7 @@ def worker(rank, world_size, args):
 # ---------------------------------------------------------------------------
 # Single-GPU worker (no distributed)
 # ---------------------------------------------------------------------------
+
 
 def worker_single(args):
     """Single-GPU training (no distributed)."""
@@ -1055,16 +1522,19 @@ def worker_single(args):
     print("=" * 60)
     print("SAM3 Pruned Model Fine-tuning via Distillation")
     print(f"  Single GPU | Device: {device}")
-    print(f"  Text prompts: {len(ALL_CLASSES)} classes "
-          f"({len(COCO_CLASSES)} COCO + {len(LVIS_EXTRA_CLASSES)} LVIS)")
+    print(
+        f"  Text prompts: {len(ALL_CLASSES)} classes "
+        f"({len(COCO_CLASSES)} COCO + {len(LVIS_EXTRA_CLASSES)} LVIS)"
+    )
     print(f"  Prompts per batch: {args.num_prompts}")
     if use_student_bb:
         print(f"  Student backbone: {args.student_backbone}")
     else:
-        print(f"  Backbone: shared ViT-H (teacher)")
+        print("  Backbone: shared ViT-H (teacher)")
     print("=" * 60)
 
     from sam3.model_builder import load_pruned_config
+
     pruning_config = load_pruned_config(args.pruned_checkpoint)
     if pruning_config is None:
         print("ERROR: No pruning_config found in checkpoint.")
@@ -1072,6 +1542,7 @@ def worker_single(args):
     print(f"Pruning config: {pruning_config}")
 
     from sam3.model_builder import build_sam3_image_model
+
     print("\nBuilding teacher model (unpruned)...")
     build_device = "cuda" if torch.cuda.is_available() else "cpu"
     teacher = build_sam3_image_model(
@@ -1085,6 +1556,7 @@ def worker_single(args):
     print(f"  Teacher params: {sum(p.numel() for p in teacher.parameters()):,}")
 
     from sam3.model_builder import build_pruned_sam3_image_model
+
     print("\nBuilding student model (pruned)...")
     student = build_pruned_sam3_image_model(
         checkpoint_path=args.pruned_checkpoint,
@@ -1099,6 +1571,7 @@ def worker_single(args):
     if use_student_bb:
         print(f"\nBuilding student backbone: {args.student_backbone}")
         from sam3.distillation.student_backbone import build_student_backbone
+
         student_backbone = build_student_backbone(
             config_name=args.student_backbone,
             pretrained=True,
@@ -1106,7 +1579,9 @@ def worker_single(args):
         )
         student_backbone = student_backbone.to(device)
         adapter_params = student_backbone.trainable_params
-        print(f"  Student backbone adapter params: {adapter_params:,} ({adapter_params/1e6:.1f}M)")
+        print(
+            f"  Student backbone adapter params: {adapter_params:,} ({adapter_params / 1e6:.1f}M)"
+        )
     else:
         student.backbone = teacher.backbone
 
@@ -1118,13 +1593,20 @@ def worker_single(args):
         print(f"  Using subset of {len(dataset)} images")
 
     dataloader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.num_workers, pin_memory=True, drop_last=True,
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        drop_last=True,
     )
 
     trainer = PrunedModelFinetuner(
-        teacher_model=teacher, student_model=student,
-        dataloader=dataloader, device=device, lr=args.lr,
+        teacher_model=teacher,
+        student_model=student,
+        dataloader=dataloader,
+        device=device,
+        lr=args.lr,
         encoder_loss_weight=args.encoder_weight,
         prompt_loss_weight=args.prompt_weight,
         decoder_loss_weight=args.decoder_weight,
@@ -1143,79 +1625,152 @@ def worker_single(args):
         losses = trainer.train_epoch(epoch, args.epochs)
         if (epoch + 1) % args.save_every == 0:
             trainer.save_checkpoint(
-                os.path.join(args.output_dir, f"finetuned_epoch{epoch+1}.pt"),
-                pruning_config, epoch + 1, losses,
+                os.path.join(args.output_dir, f"finetuned_epoch{epoch + 1}.pt"),
+                pruning_config,
+                epoch + 1,
+                losses,
                 backbone_config=args.student_backbone,
             )
         if losses["total"] < best_loss:
             best_loss = losses["total"]
-            trainer.save_checkpoint(best_path, pruning_config, epoch + 1, losses,
-                                    backbone_config=args.student_backbone)
+            trainer.save_checkpoint(
+                best_path,
+                pruning_config,
+                epoch + 1,
+                losses,
+                backbone_config=args.student_backbone,
+            )
             print(f"  New best loss: {best_loss:.4f}")
 
     trainer.save_checkpoint(
         os.path.join(args.output_dir, "finetuned_final.pt"),
-        pruning_config, args.epochs, losses,
+        pruning_config,
+        args.epochs,
+        losses,
         backbone_config=args.student_backbone,
     )
     print(f"\nDone! Best loss: {best_loss:.4f}")
-    print(f"  python demo_multiclass.py --image x.jpg --classes person car --checkpoint {best_path}")
+    print(
+        f"  python demo_multiclass.py --image x.jpg --classes person car --checkpoint {best_path}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Fine-tune pruned SAM3 via distillation")
+    parser = argparse.ArgumentParser(
+        description="Fine-tune pruned SAM3 via distillation"
+    )
     parser.add_argument(
-        "--pruned-checkpoint", required=True,
+        "--pruned-checkpoint",
+        required=True,
         help="Path to pruned SAM3 checkpoint (from analyze_pruning.py --apply)",
     )
     parser.add_argument(
-        "--teacher-checkpoint", default=None,
+        "--teacher-checkpoint",
+        default=None,
         help="Path to unpruned SAM3 checkpoint (defaults to HF download)",
     )
-    parser.add_argument("--coco-dir", required=True, help="Path to COCO train2017 images")
-    parser.add_argument("--output-dir", default="finetune_output", help="Output directory")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument(
+        "--coco-dir", required=True, help="Path to COCO train2017 images"
+    )
+    parser.add_argument(
+        "--output-dir", default="finetune_output", help="Output directory"
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of training epochs"
+    )
     parser.add_argument("--batch-size", type=int, default=2, help="Batch size per GPU")
     parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")
-    parser.add_argument("--subset-size", type=int, default=5000,
-                        help="Number of COCO images to use (0 = all)")
-    parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers per GPU")
-    parser.add_argument("--save-every", type=int, default=2, help="Save checkpoint every N epochs")
+    parser.add_argument(
+        "--subset-size",
+        type=int,
+        default=5000,
+        help="Number of COCO images to use (0 = all)",
+    )
+    parser.add_argument(
+        "--num-workers", type=int, default=4, help="DataLoader workers per GPU"
+    )
+    parser.add_argument(
+        "--save-every", type=int, default=2, help="Save checkpoint every N epochs"
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--gpus", type=int, default=None,
-                        help="Number of GPUs to use (default: all visible)")
-    parser.add_argument("--num-prompts", type=int, default=4,
-                        help="Number of random text prompts per batch")
+    parser.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="Number of GPUs to use (default: all visible)",
+    )
+    parser.add_argument(
+        "--num-prompts",
+        type=int,
+        default=4,
+        help="Number of random text prompts per batch",
+    )
 
     # Student backbone (optional — replaces ViT-H with lightweight backbone)
-    parser.add_argument("--student-backbone", type=str, default=None,
-                        choices=["efficientvit_l1", "efficientvit_l2",
-                                 "repvit_m2_3", "tiny_vit_21m"],
-                        help="Lightweight backbone to replace ViT-H "
-                             "(default: None = share teacher's ViT-H)")
+    parser.add_argument(
+        "--student-backbone",
+        type=str,
+        default=None,
+        choices=["efficientvit_l1", "efficientvit_l2", "repvit_m2_3", "tiny_vit_21m"],
+        help="Lightweight backbone to replace ViT-H "
+        "(default: None = share teacher's ViT-H)",
+    )
 
     # Loss weights
-    parser.add_argument("--encoder-weight", type=float, default=1.0,
-                        help="Loss weight for encoder memory MSE")
-    parser.add_argument("--prompt-weight", type=float, default=0.5,
-                        help="Loss weight for prompt-after-encoder MSE")
-    parser.add_argument("--decoder-weight", type=float, default=1.0,
-                        help="Loss weight for decoder hidden states MSE (all layers)")
-    parser.add_argument("--refbox-weight", type=float, default=1.0,
-                        help="Loss weight for reference box MSE (all layers)")
-    parser.add_argument("--boxpred-weight", type=float, default=0.5,
-                        help="Loss weight for box prediction (bbox_embed) MSE")
-    parser.add_argument("--scoring-weight", type=float, default=0.3,
-                        help="Loss weight for scoring head MSE")
-    parser.add_argument("--presence-weight", type=float, default=1.0,
-                        help="Loss weight for decoder presence prediction MSE")
-    parser.add_argument("--backbone-weight", type=float, default=2.0,
-                        help="Loss weight for backbone FPN feature MSE "
-                             "(only used with --student-backbone)")
+    parser.add_argument(
+        "--encoder-weight",
+        type=float,
+        default=1.0,
+        help="Loss weight for encoder memory MSE",
+    )
+    parser.add_argument(
+        "--prompt-weight",
+        type=float,
+        default=0.5,
+        help="Loss weight for prompt-after-encoder MSE",
+    )
+    parser.add_argument(
+        "--decoder-weight",
+        type=float,
+        default=1.0,
+        help="Loss weight for decoder hidden states MSE (all layers)",
+    )
+    parser.add_argument(
+        "--refbox-weight",
+        type=float,
+        default=1.0,
+        help="Loss weight for reference box MSE (all layers)",
+    )
+    parser.add_argument(
+        "--boxpred-weight",
+        type=float,
+        default=0.5,
+        help="Loss weight for box prediction (bbox_embed) MSE",
+    )
+    parser.add_argument(
+        "--scoring-weight",
+        type=float,
+        default=0.3,
+        help="Loss weight for scoring head MSE",
+    )
+    parser.add_argument(
+        "--presence-weight",
+        type=float,
+        default=1.0,
+        help="Loss weight for decoder presence prediction MSE",
+    )
+    parser.add_argument(
+        "--backbone-weight",
+        type=float,
+        default=2.0,
+        help="Loss weight for backbone FPN feature MSE "
+        "(only used with --student-backbone)",
+    )
 
     args = parser.parse_args()
 

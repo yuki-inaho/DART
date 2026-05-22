@@ -21,14 +21,19 @@ except ImportError:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze TRT layer types in ONNX model")
+    parser = argparse.ArgumentParser(
+        description="Analyze TRT layer types in ONNX model"
+    )
     parser.add_argument("--onnx", required=True, help="ONNX model path")
     parser.add_argument(
-        "--dump-names", action="store_true",
+        "--dump-names",
+        action="store_true",
         help="Print all layer names grouped by type",
     )
     parser.add_argument(
-        "--filter-type", type=str, default=None,
+        "--filter-type",
+        type=str,
+        default=None,
         help="Only show layers of this type (e.g. REDUCE, ELEMENTWISE)",
     )
     args = parser.parse_args()
@@ -112,9 +117,15 @@ def main():
     print()
     print("=== Compute layers (affected by FP16 precision) ===")
     compute_types = [
-        "MATRIX_MULTIPLY", "CONVOLUTION", "DECONVOLUTION",
-        "ELEMENTWISE", "REDUCE", "UNARY", "SOFTMAX",
-        "SCALE", "NORMALIZATION",
+        "MATRIX_MULTIPLY",
+        "CONVOLUTION",
+        "DECONVOLUTION",
+        "ELEMENTWISE",
+        "REDUCE",
+        "UNARY",
+        "SOFTMAX",
+        "SCALE",
+        "NORMALIZATION",
     ]
     for ct in compute_types:
         if ct in type_counts:

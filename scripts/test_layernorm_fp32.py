@@ -9,8 +9,9 @@ keeping MATRIX_MULTIPLY in FP16, we get near-26ms speed!
 
 import sys
 import time
-import torch
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -46,10 +47,24 @@ def build_with_fp32_types(onnx_path, output_path, fp32_type_names, label):
 
     skip_types = set()
     for name in (
-        "SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-        "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-        "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-        "NON_ZERO", "ONE_HOT", "GRID_SAMPLE",
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
     ):
         if hasattr(trt.LayerType, name):
             skip_types.add(getattr(trt.LayerType, name))
@@ -74,7 +89,9 @@ def build_with_fp32_types(onnx_path, output_path, fp32_type_names, label):
             fp16_count += 1
 
     type_str = " + ".join(f"{v} {k}" for k, v in type_counts.items())
-    print(f"  {label}: {fp32_count} FP32 ({type_str}) / {fp16_count} FP16 / {skip_count} skip")
+    print(
+        f"  {label}: {fp32_count} FP32 ({type_str}) / {fp16_count} FP16 / {skip_count} skip"
+    )
 
     t0 = time.time()
     engine_bytes = builder.build_serialized_network(network, config)
@@ -83,7 +100,9 @@ def build_with_fp32_types(onnx_path, output_path, fp32_type_names, label):
         raise RuntimeError("Build failed")
     with open(output_path, "wb") as f:
         f.write(engine_bytes)
-    print(f"  Built in {build_s:.0f}s, size={Path(output_path).stat().st_size/1e6:.0f} MB")
+    print(
+        f"  Built in {build_s:.0f}s, size={Path(output_path).stat().st_size / 1e6:.0f} MB"
+    )
     return output_path
 
 
@@ -97,7 +116,9 @@ def test_engine(engine_path, label, model, dummy):
 
     pos_module = backbone.vision_backbone.position_encoding
     trt_bb = TRTBackbone(
-        engine_path=engine_path, device=DEVICE, pos_encoding_module=pos_module,
+        engine_path=engine_path,
+        device=DEVICE,
+        pos_encoding_module=pos_module,
     )
 
     with torch.inference_mode():
@@ -131,7 +152,9 @@ def main():
 
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -140,11 +163,14 @@ def main():
 
     # Test 1: Just NORMALIZATION (LayerNorm) FP32
     tests = [
-        (["NORMALIZATION"],                                    "norm_only"),
-        (["NORMALIZATION", "SOFTMAX"],                         "norm+softmax"),
-        (["NORMALIZATION", "SOFTMAX", "REDUCE"],               "norm+softmax+reduce"),
-        (["NORMALIZATION", "SOFTMAX", "ELEMENTWISE"],          "norm+softmax+elementwise"),
-        (["NORMALIZATION", "SOFTMAX", "MATRIX_MULTIPLY"],      "norm+softmax+matmul (prev best)"),
+        (["NORMALIZATION"], "norm_only"),
+        (["NORMALIZATION", "SOFTMAX"], "norm+softmax"),
+        (["NORMALIZATION", "SOFTMAX", "REDUCE"], "norm+softmax+reduce"),
+        (["NORMALIZATION", "SOFTMAX", "ELEMENTWISE"], "norm+softmax+elementwise"),
+        (
+            ["NORMALIZATION", "SOFTMAX", "MATRIX_MULTIPLY"],
+            "norm+softmax+matmul (prev best)",
+        ),
     ]
 
     for fp32_types, label in tests:

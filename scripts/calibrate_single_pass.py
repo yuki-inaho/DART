@@ -35,21 +35,19 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
 
 import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_multiclass import Sam3MultiClassPredictor
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-
+from sam3.model_builder import build_sam3_image_model
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 
 
-def find_images(images_dir: str, max_images: int) -> List[str]:
+def find_images(images_dir: str, max_images: int) -> list[str]:
     paths = []
     for fname in sorted(os.listdir(images_dir)):
         if Path(fname).suffix.lower() in IMAGE_EXTENSIONS:
@@ -67,12 +65,12 @@ def find_images(images_dir: str, max_images: int) -> List[str]:
 @torch.inference_mode()
 def collect_prototypes(
     model,
-    class_names: List[str],
-    image_paths: List[str],
+    class_names: list[str],
+    image_paths: list[str],
     device: str,
     confidence: float = 0.3,
     nms: float = 0.7,
-) -> Dict:
+) -> dict:
     """Run GT predictor, project query features, group by class, compute centroids."""
 
     # GT predictor (sequential, per-class)
@@ -81,7 +79,10 @@ def collect_prototypes(
 
     # Single-pass predictor (to get concatenated encoding + decoder output)
     sp_pred = Sam3MultiClassPredictorFast(
-        model, device=device, use_fp16=True, single_pass=True,
+        model,
+        device=device,
+        use_fp16=True,
+        single_pass=True,
     )
     sp_pred.set_classes(class_names)
 
@@ -104,7 +105,9 @@ def collect_prototypes(
         # --- GT predictions: get class labels ---
         gt_state = gt_pred.set_image(image)
         gt_results = gt_pred.predict(
-            gt_state, confidence_threshold=confidence, nms_threshold=nms,
+            gt_state,
+            confidence_threshold=confidence,
+            nms_threshold=nms,
             per_class_nms=False,
         )
 
@@ -120,7 +123,7 @@ def collect_prototypes(
 
         backbone_out = sp_state["backbone_out"]
         img_ids = torch.tensor([0], device=device, dtype=torch.long)
-        backbone_out_proc, img_feats, img_pos_embeds, vis_feat_sizes = (
+        _backbone_out_proc, img_feats, img_pos_embeds, vis_feat_sizes = (
             model._get_img_feats(backbone_out, img_ids)
         )
 
@@ -168,6 +171,7 @@ def collect_prototypes(
         hs_t = hs.transpose(1, 2)  # (num_layers, 1, Q, d)
         reference_boxes_t = reference_boxes.transpose(1, 2)
         from sam3.model.model_misc import inverse_sigmoid
+
         box_offsets = model.transformer.decoder.bbox_embed(hs_t)
         ref_inv = inverse_sigmoid(reference_boxes_t)
         sp_boxes = (ref_inv + box_offsets).sigmoid()[-1, 0]  # (Q, 4) cxcywh
@@ -176,10 +180,10 @@ def collect_prototypes(
         det_probs = det_scores[-1, 0, :, 0].float().sigmoid()  # (Q,)
 
         # Get GT boxes in cxcywh normalized form
-        from sam3.model.box_ops import box_cxcywh_to_xyxy
         orig_h, orig_w = sp_state["original_height"], sp_state["original_width"]
-        scale = torch.tensor([orig_w, orig_h, orig_w, orig_h],
-                             device=device, dtype=torch.float32)
+        scale = torch.tensor(
+            [orig_w, orig_h, orig_w, orig_h], device=device, dtype=torch.float32
+        )
 
         # Convert GT boxes to normalized cxcywh
         gt_boxes_xyxy = gt_results["boxes"]  # (n_det, 4) in pixel coords
@@ -215,8 +219,10 @@ def collect_prototypes(
         n = len(feats)
         print(f"  {class_names[i]}: {n} detections")
         if n == 0:
-            print(f"    WARNING: No detections for class '{class_names[i]}'. "
-                  f"Using text embedding as fallback.")
+            print(
+                f"    WARNING: No detections for class '{class_names[i]}'. "
+                f"Using text embedding as fallback."
+            )
             prototypes.append(sp_pred._class_proj_norm[i])
         else:
             stacked = torch.stack(feats)  # (n, d_proj)
@@ -238,15 +244,15 @@ def collect_prototypes(
 
 def finetune_hs_proj(
     model,
-    class_names: List[str],
-    image_paths: List[str],
+    class_names: list[str],
+    image_paths: list[str],
     device: str,
     epochs: int = 20,
     lr: float = 1e-3,
     confidence: float = 0.3,
     nms: float = 0.7,
     temperature: float = 0.07,
-) -> Dict:
+) -> dict:
     """Fine-tune hs_proj with cross-entropy loss on per-class cosine similarity.
 
     Collects (query_feature, class_id) pairs from GT predictor + single-pass
@@ -261,15 +267,18 @@ def finetune_hs_proj(
     gt_pred.set_classes(class_names)
 
     sp_pred = Sam3MultiClassPredictorFast(
-        model, device=device, use_fp16=True, single_pass=True,
+        model,
+        device=device,
+        use_fp16=True,
+        single_pass=True,
     )
     sp_pred.set_classes(class_names)
 
     scoring = model.dot_prod_scoring
     N = len(class_names)
 
-    all_hs_feats = []   # raw hs (before hs_proj), (d_model,)
-    all_class_ids = []   # int class id
+    all_hs_feats = []  # raw hs (before hs_proj), (d_model,)
+    all_class_ids = []  # int class id
 
     n_images = len(image_paths)
     with torch.inference_mode():
@@ -282,7 +291,9 @@ def finetune_hs_proj(
             # GT
             gt_state = gt_pred.set_image(image)
             gt_results = gt_pred.predict(
-                gt_state, confidence_threshold=confidence, nms_threshold=nms,
+                gt_state,
+                confidence_threshold=confidence,
+                nms_threshold=nms,
                 per_class_nms=False,
             )
             n_det = len(gt_results["scores"])
@@ -295,7 +306,7 @@ def finetune_hs_proj(
 
             backbone_out = sp_state["backbone_out"]
             img_ids = torch.tensor([0], device=device, dtype=torch.long)
-            backbone_out_proc, img_feats, img_pos_embeds, vis_feat_sizes = (
+            _backbone_out_proc, img_feats, img_pos_embeds, vis_feat_sizes = (
                 model._get_img_feats(backbone_out, img_ids)
             )
 
@@ -337,6 +348,7 @@ def finetune_hs_proj(
             hs_t = hs.transpose(1, 2)
             reference_boxes_t = reference_boxes.transpose(1, 2)
             from sam3.model.model_misc import inverse_sigmoid
+
             box_offsets = model.transformer.decoder.bbox_embed(hs_t)
             ref_inv = inverse_sigmoid(reference_boxes_t)
             sp_boxes = (ref_inv + box_offsets).sigmoid()[-1, 0]
@@ -344,10 +356,10 @@ def finetune_hs_proj(
             det_scores = model.dot_prod_scoring(hs_t, prompt, prompt_mask)
             det_probs = det_scores[-1, 0, :, 0].float().sigmoid()
 
-            from sam3.model.box_ops import box_cxcywh_to_xyxy
             orig_h, orig_w = sp_state["original_height"], sp_state["original_width"]
-            scale = torch.tensor([orig_w, orig_h, orig_w, orig_h],
-                                 device=device, dtype=torch.float32)
+            scale = torch.tensor(
+                [orig_w, orig_h, orig_w, orig_h], device=device, dtype=torch.float32
+            )
             gt_boxes_xyxy = gt_results["boxes"]
             gt_boxes_norm = gt_boxes_xyxy / scale
             gt_cx = (gt_boxes_norm[:, 0] + gt_boxes_norm[:, 2]) / 2
@@ -383,8 +395,8 @@ def finetune_hs_proj(
     with torch.inference_mode():
         per_class_proj = []
         for i in range(N):
-            class_text = sp_pred._batched_text[:, i:i+1, :]
-            class_mask = sp_pred._batched_mask[i:i+1, :]
+            class_text = sp_pred._batched_text[:, i : i + 1, :]
+            class_mask = sp_pred._batched_mask[i : i + 1, :]
             text_in = class_text
             if scoring.prompt_mlp is not None:
                 text_in = scoring.prompt_mlp(text_in)
@@ -454,8 +466,10 @@ def finetune_hs_proj(
             best_acc = acc
             best_state = {k: v.cpu().clone() for k, v in hs_proj.state_dict().items()}
 
-        print(f"  Epoch {epoch + 1:3d}/{epochs}  "
-              f"loss={avg_loss:.4f}  acc={acc:.3f}  lr={lr_now:.2e}")
+        print(
+            f"  Epoch {epoch + 1:3d}/{epochs}  "
+            f"loss={avg_loss:.4f}  acc={acc:.3f}  lr={lr_now:.2e}"
+        )
 
     # Restore best
     hs_proj.load_state_dict(best_state)
@@ -489,30 +503,39 @@ def main():
     # Shared args
     def add_common_args(p):
         p.add_argument("--images-dir", type=str, required=True)
-        p.add_argument("--classes", nargs="+", type=str,
-                        default=["car", "pedestrian", "bicycle"])
+        p.add_argument(
+            "--classes", nargs="+", type=str, default=["car", "pedestrian", "bicycle"]
+        )
         p.add_argument("--max-images", type=int, default=200)
         p.add_argument("--confidence", type=float, default=0.3)
         p.add_argument("--nms", type=float, default=0.7)
-        p.add_argument("--device", type=str,
-                        default="cuda" if torch.cuda.is_available() else "cpu")
+        p.add_argument(
+            "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+        )
         p.add_argument("--checkpoint", type=str, default=None)
-        p.add_argument("--output", "-o", type=str, required=True,
-                        help="Output .pt file path")
+        p.add_argument(
+            "--output", "-o", type=str, required=True, help="Output .pt file path"
+        )
 
     # Prototype mode
-    proto_parser = subparsers.add_parser("prototype",
-                                          help="Collect calibrated class prototypes")
+    proto_parser = subparsers.add_parser(
+        "prototype", help="Collect calibrated class prototypes"
+    )
     add_common_args(proto_parser)
 
     # Finetune mode
-    ft_parser = subparsers.add_parser("finetune",
-                                       help="Fine-tune hs_proj scoring layer")
+    ft_parser = subparsers.add_parser(
+        "finetune", help="Fine-tune hs_proj scoring layer"
+    )
     add_common_args(ft_parser)
     ft_parser.add_argument("--epochs", type=int, default=20)
     ft_parser.add_argument("--lr", type=float, default=1e-3)
-    ft_parser.add_argument("--temperature", type=float, default=0.07,
-                            help="Temperature for contrastive loss")
+    ft_parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.07,
+        help="Temperature for contrastive loss",
+    )
 
     args = parser.parse_args()
 

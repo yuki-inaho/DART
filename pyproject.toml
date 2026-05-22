@@ -79,6 +79,11 @@ train = [
 dev = [
     "pytest",
     "pytest-cov",
+    "ruff>=0.15",
+    "ty>=0.0.38",
+    "radon>=6.0",
+    "jaxtyping>=0.3",
+    "beartype>=0.22",
 ]
 
 [project.urls]
@@ -94,43 +99,83 @@ sam3 = ["assets/*.txt.gz"]
 [tool.setuptools.dynamic]
 version = {attr = "sam3.__version__"}
 
-[tool.black]
+# ---------- ruff (replaces black + isort + flake8) ----------
+[tool.ruff]
+target-version = "py311"
 line-length = 88
-target-version = ['py311', 'py312']
-include = '\.pyi?$'
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-warn_unused_configs = true
-
-[[tool.mypy.overrides]]
-module = [
-    "torch.*",
-    "torchvision.*",
-    "timm.*",
-    "numpy.*",
-    "PIL.*",
-    "tqdm.*",
-    "ftfy.*",
-    "regex.*",
-    "iopath.*",
-    "tensorrt.*",
-    "onnx.*",
-    "onnxslim.*",
-    "scipy.*",
-    "cv2.*",
-    "einops.*",
-    "decord.*",
-    "psutil.*",
-    "pycocotools.*",
-    "triton.*",
+src = ["sam3", "scripts"]
+extend-exclude = [
+    "sam3/backbones/efficientvit",
+    "sam3/agent",
 ]
-ignore_missing_imports = true
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "C4",     # flake8-comprehensions
+    "RUF",    # ruff-specific
+]
+ignore = [
+    "E501",   # line length (formatter handles)
+    "E402",   # import not at top (conditional imports common in ML)
+    "E721",   # type comparison (intentional in some torch dispatch)
+    "E722",   # bare except (legacy patterns)
+    "E731",   # lambda assignment
+    "E741",   # ambiguous variable name (l, I, O common in ML)
+    "B905",   # zip-strict (noisy in existing code)
+    "SIM102", # collapsible if (readability preference)
+    "SIM105", # suppressible exception
+    "SIM108", # ternary operator (readability preference)
+    "SIM117", # multiple with statements
+    "UP015",  # unnecessary open mode
+    "RUF001", # ambiguous unicode in string
+    "RUF002", # ambiguous unicode in docstring
+    "RUF003", # ambiguous unicode in comment
+    "RUF012", # mutable class default (common in nn.Module)
+    "RUF013", # implicit optional (too many in vendored code)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"sam3/train/**" = ["E", "W", "UP", "SIM", "C4"]
+"scripts/**" = ["F821", "B023", "B008", "SIM115"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sam3"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------- ty (type checker, replaces mypy) ----------
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.rules]
+# Suppress noisy rules from incomplete torch/numpy type stubs
+invalid-argument-type = "ignore"
+unresolved-attribute = "ignore"
+unresolved-import = "ignore"      # optional deps (tensorrt, triton, etc.)
+not-subscriptable = "ignore"
+call-non-callable = "ignore"
+unsupported-operator = "ignore"
+no-matching-overload = "ignore"
+not-iterable = "ignore"
+possibly-missing-submodule = "ignore"
+invalid-assignment = "ignore"     # torch tensor assignments
+invalid-parameter-default = "ignore"  # implicit Optional defaults
+invalid-method-override = "ignore"    # nn.Module subclass signatures
+
+[tool.ty.src]
+exclude = [
+    "sam3/backbones/efficientvit",
+    "sam3/agent",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

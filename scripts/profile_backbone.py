@@ -3,8 +3,9 @@
 
 import sys
 import time
-import torch
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -31,7 +32,9 @@ def profile_blocks(model, dummy):
 
     global_blocks = set(trunk.full_attn_ids)
     print(f"Global attention block indices: {sorted(global_blocks)}")
-    print(f"Window size: {trunk.blocks[0].attn.window_size if hasattr(trunk.blocks[0].attn, 'window_size') else 'N/A'}")
+    print(
+        f"Window size: {trunk.blocks[0].attn.window_size if hasattr(trunk.blocks[0].attn, 'window_size') else 'N/A'}"
+    )
 
     # Use hooks to time blocks
     block_times = {}
@@ -95,8 +98,8 @@ def profile_blocks(model, dummy):
 
     total = total_global + total_window
     print(f"\nTotal blocks: {total:.1f}ms")
-    print(f"  Global (4):  {total_global:.1f}ms ({total_global/total*100:.0f}%)")
-    print(f"  Window (28): {total_window:.1f}ms ({total_window/total*100:.0f}%)")
+    print(f"  Global (4):  {total_global:.1f}ms ({total_global / total * 100:.0f}%)")
+    print(f"  Window (28): {total_window:.1f}ms ({total_window / total * 100:.0f}%)")
 
 
 def test_resolutions(model):
@@ -117,6 +120,7 @@ def test_resolutions(model):
     for res in resolutions:
         dummy = torch.randn(1, 3, res, res, device=DEVICE)
         try:
+
             def run_fn(x):
                 with torch.autocast("cuda", dtype=DTYPE):
                     return backbone.forward_image(x)
@@ -174,7 +178,9 @@ def main():
 
     print("Loading SAM3 model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 

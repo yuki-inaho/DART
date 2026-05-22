@@ -41,7 +41,7 @@ Typical numbers on RTX 4080:
 """
 
 import time
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
 
 import cv2
 import numpy as np
@@ -54,7 +54,7 @@ def _preprocess_frame(
     resolution: int,
     transform,
     device,
-) -> Tuple[Tensor, int, int]:
+) -> tuple[Tensor, int, int]:
     """Convert an OpenCV BGR frame to a normalized GPU tensor.
 
     Skips CPU resize — the GPU transform pipeline already contains
@@ -81,7 +81,7 @@ def _preprocess_frame(
     return tensor, orig_h, orig_w
 
 
-def _clone_backbone_out(bb_out: Dict) -> Dict:
+def _clone_backbone_out(bb_out: dict) -> dict:
     """Deep-clone backbone output dict so buffers can be safely reused.
 
     Only clones tensor values; non-tensor values (like None) are passed through.
@@ -102,6 +102,7 @@ def _clone_backbone_out(bb_out: Dict) -> Dict:
 # ---------------------------------------------------------------------------
 # PipelinedVideoProcessor (TRT backbone, double-buffered)
 # ---------------------------------------------------------------------------
+
 
 class PipelinedVideoProcessor:
     """Overlap backbone(frame N+1) with enc-dec(frame N) for near-real-time.
@@ -154,9 +155,9 @@ class PipelinedVideoProcessor:
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-        callback: Optional[Callable] = None,
+        callback: Callable | None = None,
         max_frames: int = 0,
-    ) -> Dict:
+    ) -> dict:
         """Process a video with pipelined backbone/enc-dec execution.
 
         Args:
@@ -181,10 +182,7 @@ class PipelinedVideoProcessor:
         h_in = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if max_frames > 0:
             total = min(total, max_frames)
-        print(
-            f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, "
-            f"{total} frames)"
-        )
+        print(f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, {total} frames)")
 
         bb_a, bb_b = self._backbones
         frame_times = []
@@ -253,20 +251,20 @@ class PipelinedVideoProcessor:
 
             if has_next and (max_frames <= 0 or frame_idx + 1 < max_frames):
                 next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                    next_frame, self.resolution, self.predictor.transform,
+                    next_frame,
+                    self.resolution,
+                    self.predictor.transform,
                     self.device,
                 )
-                bb_out_next, bb_event_next = bb_a.forward_image_async(
-                    next_tensor
-                )
+                bb_out_next, bb_event_next = bb_a.forward_image_async(next_tensor)
             else:
                 bb_out_next = None
                 bb_event_next = None
                 has_next = False
 
-            torch.cuda.current_stream(
-                torch.device(self.device)
-            ).wait_event(current_event)
+            torch.cuda.current_stream(torch.device(self.device)).wait_event(
+                current_event
+            )
 
             state = {
                 "backbone_out": current_bb_out,
@@ -299,6 +297,7 @@ class PipelinedVideoProcessor:
 # ---------------------------------------------------------------------------
 # CompiledVideoProcessor (torch.compile backbone, stream-based overlap)
 # ---------------------------------------------------------------------------
+
 
 class CompiledVideoProcessor:
     """Overlap torch.compile backbone with enc-dec via CUDA streams.
@@ -338,9 +337,9 @@ class CompiledVideoProcessor:
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-        callback: Optional[Callable] = None,
+        callback: Callable | None = None,
         max_frames: int = 0,
-    ) -> Dict:
+    ) -> dict:
         """Process a video with pipelined backbone/enc-dec execution.
 
         Pipeline timeline (steady state):
@@ -374,10 +373,7 @@ class CompiledVideoProcessor:
         h_in = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if max_frames > 0:
             total = min(total, max_frames)
-        print(
-            f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, "
-            f"{total} frames)"
-        )
+        print(f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, {total} frames)")
 
         backbone_fn = self.predictor._backbone_fn
         backbone_stream = self._backbone_stream
@@ -418,7 +414,9 @@ class CompiledVideoProcessor:
 
         if has_next:
             next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                next_frame, self.resolution, self.predictor.transform,
+                next_frame,
+                self.resolution,
+                self.predictor.transform,
                 self.device,
             )
             # Launch backbone for frame 1 async on backbone_stream
@@ -477,7 +475,9 @@ class CompiledVideoProcessor:
 
             if has_next and (max_frames <= 0 or frame_idx + 1 < max_frames):
                 next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                    next_frame, self.resolution, self.predictor.transform,
+                    next_frame,
+                    self.resolution,
+                    self.predictor.transform,
                     self.device,
                 )
                 # Launch backbone(N+2) async — wait for clone to finish first
@@ -519,7 +519,8 @@ class CompiledVideoProcessor:
 # SplitBackboneVideoProcessor (split ViT blocks across pipeline stages)
 # ---------------------------------------------------------------------------
 
-def _clone_intermediate(intermediate: Dict) -> Dict:
+
+def _clone_intermediate(intermediate: dict) -> dict:
     """Deep-clone ViT intermediate state dict for double-buffering.
 
     torch.compile with CUDA graphs may reuse static output buffers, so we
@@ -578,7 +579,7 @@ class SplitBackboneVideoProcessor:
         self,
         predictor,
         split_block: int = 20,
-        compile_mode: Optional[str] = "default",
+        compile_mode: str | None = "default",
         cuda_graphs: bool = False,
     ):
         self.predictor = predictor
@@ -636,16 +637,18 @@ class SplitBackboneVideoProcessor:
         s1 = torch.cuda.Stream(device=self.device)
         s1.wait_stream(torch.cuda.current_stream(self.device))
         with torch.cuda.stream(s1):
-            with torch.amp.autocast("cuda", dtype=torch.float16,
-                                    enabled=use_fp16, cache_enabled=False):
+            with torch.amp.autocast(
+                "cuda", dtype=torch.float16, enabled=use_fp16, cache_enabled=False
+            ):
                 for _ in range(3):
-                    inter = self._part1_fn(self._static_input, split)
+                    self._part1_fn(self._static_input, split)
         torch.cuda.current_stream(self.device).wait_stream(s1)
 
         # --- Capture part1 graph ---
         self._g1 = torch.cuda.CUDAGraph()
-        with torch.amp.autocast("cuda", dtype=torch.float16,
-                                enabled=use_fp16, cache_enabled=False):
+        with torch.amp.autocast(
+            "cuda", dtype=torch.float16, enabled=use_fp16, cache_enabled=False
+        ):
             with torch.cuda.graph(self._g1):
                 static_inter = self._part1_fn(self._static_input, split)
         # static_inter["x"] is at a fixed address, updated on every g1.replay()
@@ -661,16 +664,18 @@ class SplitBackboneVideoProcessor:
         s2 = torch.cuda.Stream(device=self.device)
         s2.wait_stream(torch.cuda.current_stream(self.device))
         with torch.cuda.stream(s2):
-            with torch.amp.autocast("cuda", dtype=torch.float16,
-                                    enabled=use_fp16, cache_enabled=False):
+            with torch.amp.autocast(
+                "cuda", dtype=torch.float16, enabled=use_fp16, cache_enabled=False
+            ):
                 for _ in range(3):
-                    bb_out = self._part2_fn(self._static_inter_in, split)
+                    self._part2_fn(self._static_inter_in, split)
         torch.cuda.current_stream(self.device).wait_stream(s2)
 
         # --- Capture part2 graph ---
         self._g2 = torch.cuda.CUDAGraph()
-        with torch.amp.autocast("cuda", dtype=torch.float16,
-                                enabled=use_fp16, cache_enabled=False):
+        with torch.amp.autocast(
+            "cuda", dtype=torch.float16, enabled=use_fp16, cache_enabled=False
+        ):
             with torch.cuda.graph(self._g2):
                 static_bb = self._part2_fn(self._static_inter_in, split)
         # static_bb dict tensors at fixed addresses, updated on every g2.replay()
@@ -689,9 +694,9 @@ class SplitBackboneVideoProcessor:
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-        callback: Optional[Callable] = None,
+        callback: Callable | None = None,
         max_frames: int = 0,
-    ) -> Dict:
+    ) -> dict:
         """Process a video with split-backbone pipelining.
 
         Pipeline timeline (steady state):
@@ -725,10 +730,7 @@ class SplitBackboneVideoProcessor:
         h_in = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if max_frames > 0:
             total = min(total, max_frames)
-        print(
-            f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, "
-            f"{total} frames)"
-        )
+        print(f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, {total} frames)")
 
         split_block = self._split_block
         backbone_stream = self._backbone_stream
@@ -778,7 +780,9 @@ class SplitBackboneVideoProcessor:
 
         if has_next:
             next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                next_frame, self.resolution, self.predictor.transform,
+                next_frame,
+                self.resolution,
+                self.predictor.transform,
                 self.device,
             )
             # Launch part1 for frame 1 on backbone_stream
@@ -833,13 +837,13 @@ class SplitBackboneVideoProcessor:
             if use_graphs and self._graphs_captured:
                 # CUDA graph path: copy intermediate to part2's static buffer,
                 # then launch part1(next) and part2(current) concurrently
-                self._static_inter_in["x"].copy_(
-                    next_intermediate["x"]
-                )
+                self._static_inter_in["x"].copy_(next_intermediate["x"])
 
                 if has_next and (max_frames <= 0 or frame_idx + 1 < max_frames):
                     next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                        next_frame, self.resolution, self.predictor.transform,
+                        next_frame,
+                        self.resolution,
+                        self.predictor.transform,
                         self.device,
                     )
                     # Launch part1(N+2) on backbone_stream
@@ -863,18 +867,20 @@ class SplitBackboneVideoProcessor:
 
                 if has_next and (max_frames <= 0 or frame_idx + 1 < max_frames):
                     next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                        next_frame, self.resolution, self.predictor.transform,
+                        next_frame,
+                        self.resolution,
+                        self.predictor.transform,
                         self.device,
                     )
                     backbone_stream.wait_event(
                         torch.cuda.current_stream(self.device).record_event()
                     )
                     with torch.cuda.stream(backbone_stream):
-                        with torch.autocast("cuda", dtype=torch.float16, enabled=use_fp16):
+                        with torch.autocast(
+                            "cuda", dtype=torch.float16, enabled=use_fp16
+                        ):
                             torch.compiler.cudagraph_mark_step_begin()
-                            next_intermediate = self._part1_fn(
-                                next_tensor, split_block
-                            )
+                            next_intermediate = self._part1_fn(next_tensor, split_block)
                     bb_done_event = backbone_stream.record_event()
                 else:
                     has_next = False
@@ -912,6 +918,7 @@ class SplitBackboneVideoProcessor:
 # ---------------------------------------------------------------------------
 # TRTSplitPipelinedVideoProcessor (split TRT backbone, balanced pipeline)
 # ---------------------------------------------------------------------------
+
 
 class TRTSplitPipelinedVideoProcessor:
     """Pipeline with split TRT backbone for balanced overlap.
@@ -953,9 +960,9 @@ class TRTSplitPipelinedVideoProcessor:
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-        callback: Optional[Callable] = None,
+        callback: Callable | None = None,
         max_frames: int = 0,
-    ) -> Dict:
+    ) -> dict:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise RuntimeError(f"Cannot open video: {video_path}")
@@ -966,10 +973,7 @@ class TRTSplitPipelinedVideoProcessor:
         h_in = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if max_frames > 0:
             total = min(total, max_frames)
-        print(
-            f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, "
-            f"{total} frames)"
-        )
+        print(f"Video: {video_path} ({w_in}x{h_in} @ {fps_in:.1f} FPS, {total} frames)")
 
         split_bb = self._split_bb
         frame_times = []
@@ -1007,7 +1011,9 @@ class TRTSplitPipelinedVideoProcessor:
 
         if has_next:
             next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                next_frame, self.resolution, self.predictor.transform,
+                next_frame,
+                self.resolution,
+                self.predictor.transform,
                 self.device,
             )
             # Launch Part1 for frame 1 async
@@ -1051,7 +1057,9 @@ class TRTSplitPipelinedVideoProcessor:
 
             if has_next and (max_frames <= 0 or frame_idx + 1 < max_frames):
                 next_tensor, next_orig_h, next_orig_w = _preprocess_frame(
-                    next_frame, self.resolution, self.predictor.transform,
+                    next_frame,
+                    self.resolution,
+                    self.predictor.transform,
                     self.device,
                 )
                 # Launch Part1(N+2) async on stream1
@@ -1092,7 +1100,8 @@ class TRTSplitPipelinedVideoProcessor:
 # Shared utilities
 # ---------------------------------------------------------------------------
 
-def _compute_stats(frame_times: List[float], t_start: float) -> Dict:
+
+def _compute_stats(frame_times: list[float], t_start: float) -> dict:
     """Compute timing stats from per-frame times."""
     elapsed = time.perf_counter() - t_start
     n = len(frame_times)

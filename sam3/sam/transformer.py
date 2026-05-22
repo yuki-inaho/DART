@@ -4,12 +4,12 @@
 
 import math
 from functools import partial
-from typing import Tuple, Type
 
 import torch
 import torch.nn.functional as F
+from torch import Tensor, nn
+
 from sam3.sam.rope import apply_rotary_enc, apply_rotary_enc_real, compute_axial_cis
-from torch import nn, Tensor
 
 from .common import MLPBlock
 
@@ -21,7 +21,7 @@ class TwoWayTransformer(nn.Module):
         embedding_dim: int,
         num_heads: int,
         mlp_dim: int,
-        activation: Type[nn.Module] = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         attention_downsample_rate: int = 2,
     ) -> None:
         """
@@ -65,7 +65,7 @@ class TwoWayTransformer(nn.Module):
         image_embedding: Tensor,
         image_pe: Tensor,
         point_embedding: Tensor,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         """
         Args:
           image_embedding (torch.Tensor): image to attend to. Should be shape
@@ -80,7 +80,7 @@ class TwoWayTransformer(nn.Module):
           torch.Tensor: the processed image_embedding
         """
         # BxCxHxW -> BxHWxC == B x N_image_tokens x C
-        bs, c, h, w = image_embedding.shape
+        _bs, _c, _h, _w = image_embedding.shape
         image_embedding = image_embedding.flatten(2).permute(0, 2, 1)
         image_pe = image_pe.flatten(2).permute(0, 2, 1)
 
@@ -113,7 +113,7 @@ class TwoWayAttentionBlock(nn.Module):
         embedding_dim: int,
         num_heads: int,
         mlp_dim: int = 2048,
-        activation: Type[nn.Module] = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         attention_downsample_rate: int = 2,
         skip_first_layer_pe: bool = False,
     ) -> None:
@@ -151,7 +151,7 @@ class TwoWayAttentionBlock(nn.Module):
 
     def forward(
         self, queries: Tensor, keys: Tensor, query_pe: Tensor, key_pe: Tensor
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         # Self attention block
         if self.skip_first_layer_pe:
             queries = self.self_attn(q=queries, k=queries, v=queries)

@@ -3,7 +3,6 @@
 # pyre-unsafe
 import argparse
 import json
-import os
 from multiprocessing import Pool
 from pathlib import Path
 

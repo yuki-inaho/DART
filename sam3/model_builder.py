@@ -2,14 +2,13 @@
 
 # pyre-unsafe
 
-import os
-from typing import Optional
 
 import pkg_resources
 import torch
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
 from iopath.common.file_io import g_pathmgr
+
 from sam3.model.decoder import (
     TransformerDecoder,
     TransformerDecoderLayer,
@@ -26,10 +25,12 @@ from sam3.model.memory import (
     SimpleMaskEncoder,
 )
 from sam3.model.model_misc import (
-    DotProductScoring,
     MLP,
-    MultiheadAttentionWrapper as MultiheadAttention,
+    DotProductScoring,
     TransformerWrapper,
+)
+from sam3.model.model_misc import (
+    MultiheadAttentionWrapper as MultiheadAttention,
 )
 from sam3.model.necks import Sam3DualViTDetNeck
 from sam3.model.position_encoding import PositionEmbeddingSine
@@ -249,7 +250,7 @@ def _create_geometry_encoder():
     # Create position encoding for geometry encoder
     geo_pos_enc = _create_position_encoding()
     # Create CX block for fuser
-    cx_block = CXBlock(
+    CXBlock(
         dim=256,
         kernel_size=7,
         padding=3,
@@ -536,10 +537,12 @@ def _create_sam3_transformer(
 ) -> TransformerWrapper:
     """Create SAM3 transformer encoder and decoder."""
     encoder: TransformerEncoderFusion = _create_transformer_encoder(
-        num_layers=enc_layers, dim_feedforward=dim_feedforward,
+        num_layers=enc_layers,
+        dim_feedforward=dim_feedforward,
     )
     decoder: TransformerDecoder = _create_transformer_decoder(
-        num_layers=dec_layers, num_queries=num_queries,
+        num_layers=dec_layers,
+        num_queries=num_queries,
         dim_feedforward=dim_feedforward,
     )
 
@@ -710,9 +713,9 @@ def download_ckpt_from_hf():
 
 
 def build_sam3_video_model(
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
     load_from_HF=True,
-    bpe_path: Optional[str] = None,
+    bpe_path: str | None = None,
     has_presence_token: bool = True,
     geo_encoder_use_img_cross_attn: bool = True,
     strict_state_dict_loading: bool = True,

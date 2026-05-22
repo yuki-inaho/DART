@@ -33,39 +33,42 @@ import argparse
 import os
 import time
 from pathlib import Path
-from typing import Dict, List
 
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from sam3.model_builder import build_sam3_image_model, load_pruned_config, build_pruned_sam3_image_model
+from sam3.efficient_backbone import build_efficientsam3_model
+from sam3.model.sam3_image_processor import Sam3Processor
 from sam3.model.sam3_multiclass import Sam3MultiClassPredictor
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-from sam3.model.sam3_image_processor import Sam3Processor
-from sam3.efficient_backbone import build_efficientsam3_model
+from sam3.model_builder import (
+    build_pruned_sam3_image_model,
+    build_sam3_image_model,
+    load_pruned_config,
+)
 
 # Distinct colours per class (RGB).  Cycles if more classes than colours.
 CLASS_COLOURS = [
-    (230,  25,  75),  # red
-    ( 60, 180,  75),  # green
-    (  0, 130, 200),  # blue
-    (255, 225,  25),  # yellow
-    (245, 130,  48),  # orange
-    (145,  30, 180),  # purple
-    ( 70, 240, 240),  # cyan
-    (240,  50, 230),  # magenta
-    (210, 245,  60),  # lime
+    (230, 25, 75),  # red
+    (60, 180, 75),  # green
+    (0, 130, 200),  # blue
+    (255, 225, 25),  # yellow
+    (245, 130, 48),  # orange
+    (145, 30, 180),  # purple
+    (70, 240, 240),  # cyan
+    (240, 50, 230),  # magenta
+    (210, 245, 60),  # lime
     (250, 190, 212),  # pink
-    (  0, 128, 128),  # teal
+    (0, 128, 128),  # teal
     (220, 190, 255),  # lavender
 ]
 
 
 def annotate_image(
     image: Image.Image,
-    results: Dict,
-    class_names: List[str],
+    results: dict,
+    class_names: list[str],
     mask_alpha: float = 0.45,
     box_width: int = 3,
     font_size: int = 0,
@@ -91,20 +94,24 @@ def annotate_image(
 
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
-    except (OSError, IOError):
+    except OSError:
         try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
-        except (OSError, IOError):
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size
+            )
+        except OSError:
             font = ImageFont.load_default()
 
     n_colours = len(CLASS_COLOURS)
     # Map class name → stable colour index
-    class_to_colour = {name: CLASS_COLOURS[i % n_colours] for i, name in enumerate(class_names)}
+    class_to_colour = {
+        name: CLASS_COLOURS[i % n_colours] for i, name in enumerate(class_names)
+    }
 
     num_dets = len(results["scores"])
 
     if results["masks"] is not None and mask_alpha > 0:
-        overlay = np.array(img, dtype=np.float32)       # (H, W, 3)
+        overlay = np.array(img, dtype=np.float32)  # (H, W, 3)
         mask_layer = np.zeros_like(overlay)
         mask_weight = np.zeros((h, w, 1), dtype=np.float32)
 
@@ -120,7 +127,9 @@ def annotate_image(
         valid = mask_weight[..., 0] > 0
         mask_layer[valid] /= mask_weight[valid]
         blended = overlay.copy()
-        blended[valid] = overlay[valid] * (1 - mask_alpha) + mask_layer[valid] * mask_alpha
+        blended[valid] = (
+            overlay[valid] * (1 - mask_alpha) + mask_layer[valid] * mask_alpha
+        )
         img = Image.fromarray(blended.clip(0, 255).astype(np.uint8))
 
     draw = ImageDraw.Draw(img)
@@ -147,7 +156,7 @@ def annotate_image(
 
 def run_multiclass_inference(
     image_path: str,
-    class_names: List[str],
+    class_names: list[str],
     confidence_threshold: float = 0.3,
     nms_threshold: float = 0.7,
     device: str = "cuda",
@@ -191,10 +200,13 @@ def run_multiclass_inference(
 
     if use_trt_only:
         from sam3.model.sam3_multiclass_fast import _TRTModelStub
+
         print(f"Using TRT-only mode on {device} (no checkpoint — text from cache)")
         model = _TRTModelStub(device=device)
     elif efficient_backbone:
-        print(f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) on {device} (resolution={imgsz})...")
+        print(
+            f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) on {device} (resolution={imgsz})..."
+        )
         model = build_efficientsam3_model(
             backbone_type=efficient_backbone,
             model_name=efficient_model,
@@ -237,9 +249,12 @@ def run_multiclass_inference(
 
     # Create predictor
     if single_pass:
-        print(f"Using SINGLE-PASS predictor (1x encoder+decoder + {class_method} class scoring)")
+        print(
+            f"Using SINGLE-PASS predictor (1x encoder+decoder + {class_method} class scoring)"
+        )
         predictor = Sam3MultiClassPredictorFast(
-            model, device=device,
+            model,
+            device=device,
             resolution=imgsz,
             compile_mode=compile_mode if class_method != "attention" else None,
             use_fp16=True,
@@ -258,14 +273,15 @@ def run_multiclass_inference(
         if trt_enc_dec_engine_path:
             mode_parts.append("trt-enc-dec")
         if shared_encoder:
-            mode_parts.append(f"shared-enc(\"{generic_prompt}\")")
+            mode_parts.append(f'shared-enc("{generic_prompt}")')
         if detection_only:
             mode_parts.append("detection-only")
         if text_cache:
             mode_parts.append("text-cache")
         print(f"Using FAST predictor ({' + '.join(mode_parts)})")
         predictor = Sam3MultiClassPredictorFast(
-            model, device=device,
+            model,
+            device=device,
             resolution=imgsz,
             compile_mode=compile_mode,
             use_fp16=True,
@@ -279,7 +295,9 @@ def run_multiclass_inference(
         )
     else:
         print("Using standard predictor (per-class sequential)")
-        predictor = Sam3MultiClassPredictor(model, device=device, resolution=imgsz, detection_only=detection_only)
+        predictor = Sam3MultiClassPredictor(
+            model, device=device, resolution=imgsz, detection_only=detection_only
+        )
 
     # Pre-compute class embeddings (done once, reusable across images)
     print(f"Setting {len(class_names)} classes: {class_names}")
@@ -289,7 +307,7 @@ def run_multiclass_inference(
     else:
         predictor.set_classes(class_names)
     t_classes = time.perf_counter() - t0
-    print(f"  Text encoding took {t_classes*1000:.1f}ms")
+    print(f"  Text encoding took {t_classes * 1000:.1f}ms")
 
     # Load image
     print(f"Processing image: {image_path}")
@@ -301,11 +319,14 @@ def run_multiclass_inference(
         print(f"  Running {warmup} warmup pass(es)...")
         for _ in range(warmup):
             _state = predictor.set_image(image)
-            predictor.predict(_state, confidence_threshold=confidence_threshold,
-                              nms_threshold=nms_threshold)
+            predictor.predict(
+                _state,
+                confidence_threshold=confidence_threshold,
+                nms_threshold=nms_threshold,
+            )
         if device == "cuda":
             torch.cuda.synchronize()
-        print(f"  Warmup done")
+        print("  Warmup done")
 
     # Timed backbone pass (with CUDA sync for accurate timing)
     if device == "cuda":
@@ -315,10 +336,10 @@ def run_multiclass_inference(
     if device == "cuda":
         torch.cuda.synchronize()
     t_backbone = time.perf_counter() - t0
-    print(f"  Backbone encoding took {t_backbone*1000:.1f}ms")
+    print(f"  Backbone encoding took {t_backbone * 1000:.1f}ms")
 
     # Fine-grained profiling of set_image components
-    if device == "cuda" and hasattr(predictor, '_profile_set_image'):
+    if device == "cuda" and hasattr(predictor, "_profile_set_image"):
         print("  --- set_image breakdown ---")
         for label, ms in predictor._profile_set_image(image):
             print(f"    {label}: {ms:.1f}ms")
@@ -335,7 +356,7 @@ def run_multiclass_inference(
     if device == "cuda":
         torch.cuda.synchronize()
     t_predict = time.perf_counter() - t0
-    print(f"  Prediction took {t_predict*1000:.1f}ms")
+    print(f"  Prediction took {t_predict * 1000:.1f}ms")
 
     # Print results
     num_dets = len(results["scores"])
@@ -353,8 +374,10 @@ def run_multiclass_inference(
             f"{suffix}"
         )
 
-    print(f"\nTotal time: {(t_backbone + t_predict)*1000:.1f}ms "
-          f"(backbone={t_backbone*1000:.1f}ms + predict={t_predict*1000:.1f}ms)")
+    print(
+        f"\nTotal time: {(t_backbone + t_predict) * 1000:.1f}ms "
+        f"(backbone={t_backbone * 1000:.1f}ms + predict={t_predict * 1000:.1f}ms)"
+    )
 
     # Save annotated image
     if output_path is None:
@@ -371,7 +394,7 @@ def run_multiclass_inference(
 
 
 def run_benchmark(
-    class_names: List[str],
+    class_names: list[str],
     device: str = "cuda",
     checkpoint_path: str = None,
     compile_mode: str = None,
@@ -384,7 +407,9 @@ def run_benchmark(
     """Benchmark: per-prompt vs sequential vs batched vs shared-encoder vs single-pass."""
 
     if efficient_backbone:
-        print(f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) on {device}...")
+        print(
+            f"Loading EfficientSAM3 ({efficient_backbone} {efficient_model}) on {device}..."
+        )
         model = build_efficientsam3_model(
             backbone_type=efficient_backbone,
             model_name=efficient_model,
@@ -467,7 +492,8 @@ def run_benchmark(
 
     # ---- 3. Fast batched (encoder bs=N, decoder bs=N) ----
     fast_predictor = Sam3MultiClassPredictorFast(
-        model, device=device,
+        model,
+        device=device,
         compile_mode=compile_mode,
         use_fp16=True,
         presence_threshold=0.05,
@@ -488,7 +514,8 @@ def run_benchmark(
 
     # ---- 4. Shared encoder (encoder bs=1, decoder bs=N) ----
     shared_predictor = Sam3MultiClassPredictorFast(
-        model, device=device,
+        model,
+        device=device,
         compile_mode=compile_mode,
         use_fp16=True,
         presence_threshold=0.05,
@@ -502,14 +529,15 @@ def run_benchmark(
         shared_predictor.predict(state, confidence_threshold=0.3)
 
     shared_avg = bench(
-        f"Shared-enc(\"{generic_prompt}\"){compile_tag} + fp16",
+        f'Shared-enc("{generic_prompt}"){compile_tag} + fp16',
         lambda: None,
         shared_run,
     )
 
     # ---- 5. Single-pass (encoder bs=1, decoder bs=1, cosine scoring) ----
     single_predictor = Sam3MultiClassPredictorFast(
-        model, device=device,
+        model,
+        device=device,
         compile_mode=compile_mode,
         use_fp16=True,
         single_pass=True,
@@ -527,152 +555,199 @@ def run_benchmark(
     )
 
     # ---- Results ----
-    print(f"\n{'='*65}")
+    print(f"\n{'=' * 65}")
     print(f"BENCHMARK RESULTS ({N} classes)")
-    print(f"{'='*65}")
+    print(f"{'=' * 65}")
     print(f"  Per-prompt ({N} passes):          {pp_avg:8.1f}ms")
-    print(f"  Multi-class sequential:           {mc_avg:8.1f}ms  "
-          f"({pp_avg/mc_avg:.2f}x vs per-prompt)")
-    print(f"  Fast batched:                     {fast_avg:8.1f}ms  "
-          f"({pp_avg/fast_avg:.2f}x vs per-prompt)")
-    print(f"  Shared-enc + batched:             {shared_avg:8.1f}ms  "
-          f"({pp_avg/shared_avg:.2f}x vs per-prompt, "
-          f"{fast_avg/shared_avg:.2f}x vs batched)")
-    print(f"  Single-pass + cosine:             {single_avg:8.1f}ms  "
-          f"({pp_avg/single_avg:.2f}x vs per-prompt, "
-          f"{fast_avg/single_avg:.2f}x vs batched)")
-    print(f"{'='*65}")
+    print(
+        f"  Multi-class sequential:           {mc_avg:8.1f}ms  "
+        f"({pp_avg / mc_avg:.2f}x vs per-prompt)"
+    )
+    print(
+        f"  Fast batched:                     {fast_avg:8.1f}ms  "
+        f"({pp_avg / fast_avg:.2f}x vs per-prompt)"
+    )
+    print(
+        f"  Shared-enc + batched:             {shared_avg:8.1f}ms  "
+        f"({pp_avg / shared_avg:.2f}x vs per-prompt, "
+        f"{fast_avg / shared_avg:.2f}x vs batched)"
+    )
+    print(
+        f"  Single-pass + cosine:             {single_avg:8.1f}ms  "
+        f"({pp_avg / single_avg:.2f}x vs per-prompt, "
+        f"{fast_avg / single_avg:.2f}x vs batched)"
+    )
+    print(f"{'=' * 65}")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="SAM3 multi-class inference demo"
-    )
+    parser = argparse.ArgumentParser(description="SAM3 multi-class inference demo")
+    parser.add_argument("--image", type=str, default=None, help="Path to input image")
     parser.add_argument(
-        "--image", type=str, default=None,
-        help="Path to input image"
-    )
-    parser.add_argument(
-        "--classes", nargs="+", type=str,
+        "--classes",
+        nargs="+",
+        type=str,
         default=["car", "pedestrian", "bicycle"],
-        help="Target class names"
+        help="Target class names",
     )
     parser.add_argument(
-        "--coco", action="store_true",
-        help="Use all 80 COCO classes (overrides --classes)"
+        "--coco",
+        action="store_true",
+        help="Use all 80 COCO classes (overrides --classes)",
     )
     parser.add_argument(
-        "--confidence", type=float, default=0.3,
-        help="Confidence threshold"
+        "--confidence", type=float, default=0.3, help="Confidence threshold"
     )
+    parser.add_argument("--nms", type=float, default=0.7, help="NMS IoU threshold")
     parser.add_argument(
-        "--nms", type=float, default=0.7,
-        help="NMS IoU threshold"
-    )
-    parser.add_argument(
-        "--device", type=str,
+        "--device",
+        type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Device to use"
+        help="Device to use",
     )
     parser.add_argument(
-        "--checkpoint", type=str, default=None,
-        help="Path to model checkpoint (default: download from HF)"
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to model checkpoint (default: download from HF)",
     )
     parser.add_argument(
-        "--efficient-backbone", type=str, default=None,
+        "--efficient-backbone",
+        type=str,
+        default=None,
         choices=["efficientvit", "repvit", "tinyvit"],
         help="Use lightweight EfficientSAM3 backbone instead of ViT-H",
     )
     parser.add_argument(
-        "--efficient-model", type=str, default=None,
+        "--efficient-model",
+        type=str,
+        default=None,
         help="Backbone variant (e.g. b0/b1/b2, m0_9/m1_1/m2_3, 5m/11m/21m)",
     )
     parser.add_argument(
-        "--fast", action="store_true",
-        help="Use fast predictor (batched + fp16 + early-exit)"
+        "--fast",
+        action="store_true",
+        help="Use fast predictor (batched + fp16 + early-exit)",
     )
     parser.add_argument(
-        "--compile", type=str, default=None,
+        "--compile",
+        type=str,
+        default=None,
         choices=["default", "reduce-overhead", "max-autotune"],
-        help="torch.compile mode (requires --fast)"
+        help="torch.compile mode (requires --fast)",
     )
     parser.add_argument(
-        "--shared-encoder", action="store_true",
-        help="Run encoder once with generic prompt (requires --fast)"
+        "--shared-encoder",
+        action="store_true",
+        help="Run encoder once with generic prompt (requires --fast)",
     )
     parser.add_argument(
-        "--generic-prompt", type=str, default="object",
-        help="Scene-level prompt for shared encoder (e.g. 'urban', 'indoor')"
+        "--generic-prompt",
+        type=str,
+        default="object",
+        help="Scene-level prompt for shared encoder (e.g. 'urban', 'indoor')",
     )
     parser.add_argument(
-        "--single-pass", action="store_true",
-        help="True single-pass: 1x encoder+decoder+masks with cosine class scoring"
+        "--single-pass",
+        action="store_true",
+        help="True single-pass: 1x encoder+decoder+masks with cosine class scoring",
     )
     parser.add_argument(
-        "--class-method", type=str, default="cosine",
+        "--class-method",
+        type=str,
+        default="cosine",
         choices=["cosine", "attention", "prototype"],
-        help="Class assignment method for single-pass mode (default: cosine)"
+        help="Class assignment method for single-pass mode (default: cosine)",
     )
     parser.add_argument(
-        "--prototype-path", type=str, default=None,
-        help="Path to calibrated prototypes .pt file (for --class-method prototype)"
+        "--prototype-path",
+        type=str,
+        default=None,
+        help="Path to calibrated prototypes .pt file (for --class-method prototype)",
     )
     parser.add_argument(
-        "--detection-only", action="store_true",
-        help="Skip mask generation — return boxes + scores only (faster)"
+        "--detection-only",
+        action="store_true",
+        help="Skip mask generation — return boxes + scores only (faster)",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=1008,
-        help="Input image resolution (default: 1008). Must be divisible by 14 (ViT patch size)."
+        "--imgsz",
+        type=int,
+        default=1008,
+        help="Input image resolution (default: 1008). Must be divisible by 14 (ViT patch size).",
     )
     parser.add_argument(
-        "--warmup", type=int, default=0,
-        help="Number of warmup passes before timed inference (for accurate benchmarking)"
+        "--warmup",
+        type=int,
+        default=0,
+        help="Number of warmup passes before timed inference (for accurate benchmarking)",
     )
     parser.add_argument(
-        "--trt", type=str, default=None, metavar="ENGINE",
-        help="Path to TensorRT engine for backbone (built via sam3.trt.build_engine)"
+        "--trt",
+        type=str,
+        default=None,
+        metavar="ENGINE",
+        help="Path to TensorRT engine for backbone (built via sam3.trt.build_engine)",
     )
     parser.add_argument(
-        "--trt-enc-dec", type=str, default=None, metavar="ENGINE",
+        "--trt-enc-dec",
+        type=str,
+        default=None,
+        metavar="ENGINE",
         help="Path to TensorRT engine for encoder+decoder+scoring "
-             "(built via sam3.trt.build_engine --type enc-dec)"
+        "(built via sam3.trt.build_engine --type enc-dec)",
     )
     parser.add_argument(
-        "--trt-max-classes", type=int, default=4,
-        help="Max classes for enc-dec TRT engine (must match --max-classes during export)"
+        "--trt-max-classes",
+        type=int,
+        default=4,
+        help="Max classes for enc-dec TRT engine (must match --max-classes during export)",
     )
     parser.add_argument(
-        "--output", "-o", type=str, default=None,
-        help="Output path for annotated image (default: <input>_annotated.jpg)"
+        "--output",
+        "-o",
+        type=str,
+        default=None,
+        help="Output path for annotated image (default: <input>_annotated.jpg)",
     )
     parser.add_argument(
-        "--text-cache", type=str, default=None, metavar="PATH",
+        "--text-cache",
+        type=str,
+        default=None,
+        metavar="PATH",
         help="Path to cached text embeddings (.pt). If the file exists "
-             "with matching classes, skips text encoder (and --checkpoint "
-             "is not needed with full TRT). Otherwise, computes and saves.",
+        "with matching classes, skips text encoder (and --checkpoint "
+        "is not needed with full TRT). Otherwise, computes and saves.",
     )
     parser.add_argument(
-        "--skip-blocks", type=str, default=None, metavar="INDICES",
+        "--skip-blocks",
+        type=str,
+        default=None,
+        metavar="INDICES",
         help="Comma-separated ViT block indices to skip for block pruning "
-             "(e.g. '1,3,9,11,17,19,25,27' skips 8 window blocks). "
-             "Cannot skip global attention blocks [7,15,23,31]."
+        "(e.g. '1,3,9,11,17,19,25,27' skips 8 window blocks). "
+        "Cannot skip global attention blocks [7,15,23,31].",
     )
     parser.add_argument(
-        "--mask-blocks", type=str, default=None, metavar="SPEC",
+        "--mask-blocks",
+        type=str,
+        default=None,
+        metavar="SPEC",
         help="Fine-grained sub-block pruning from BlockPruner search. "
-             "Comma-separated 'idx:type' pairs (e.g. '0:attn,1:mlp,2:attn'). "
-             "Masks attention or MLP sub-blocks independently. "
-             "Run scripts/block_pruner_search.py to find optimal pruning order."
+        "Comma-separated 'idx:type' pairs (e.g. '0:attn,1:mlp,2:attn'). "
+        "Masks attention or MLP sub-blocks independently. "
+        "Run scripts/block_pruner_search.py to find optimal pruning order.",
     )
     parser.add_argument(
-        "--benchmark", action="store_true",
-        help="Run benchmark comparing all five approaches"
+        "--benchmark",
+        action="store_true",
+        help="Run benchmark comparing all five approaches",
     )
     args = parser.parse_args()
 
     if args.coco:
         from sam3.coco_classes import COCO_CLASSES
+
         args.classes = COCO_CLASSES
 
     if args.efficient_backbone and not args.efficient_model:
@@ -681,7 +756,7 @@ def main():
     # Parse skip_blocks
     skip_blocks = None
     if args.skip_blocks:
-        skip_blocks = set(int(x.strip()) for x in args.skip_blocks.split(","))
+        skip_blocks = {int(x.strip()) for x in args.skip_blocks.split(",")}
 
     # Parse mask_blocks (fine-grained sub-block pruning)
     mask_blocks = None

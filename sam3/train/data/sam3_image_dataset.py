@@ -11,18 +11,18 @@ import sys
 import traceback
 from collections import Counter
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.utils.data
 import torchvision
-from decord import cpu, VideoReader
+from decord import VideoReader, cpu
 from iopath.common.file_io import g_pathmgr
 from PIL import Image as PILImage
 from PIL.Image import DecompressionBombError
-from sam3.model.box_ops import box_xywh_to_xyxy
 from torchvision.datasets.vision import VisionDataset
+
+from sam3.model.box_ops import box_xywh_to_xyxy
 
 from .coco_json_loaders import COCO_FROM_JSON
 

@@ -3,25 +3,14 @@
 # pyre-unsafe
 
 import copy
-import io
-import json
+import functools
 import logging
 import math
-import os
-import pickle
+import operator
 import random
-import sys
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-import torch
-import torchvision
 # from decord import cpu, VideoReader
-
-from iopath.common.file_io import PathManager
-from PIL import Image as PILImage
-
 from .sam3_image_dataset import Datapoint, Sam3ImageDataset
-
 
 SEED = 42
 
@@ -281,7 +270,7 @@ class VideoGroundingDataset(Sam3ImageDataset):
                     new_query.inference_metadata.frame_index = stage_id
                 tiled_find_queries_per_stage[stage_id].append(new_query)
 
-        tiled_find_queries = sum(tiled_find_queries_per_stage, [])
+        tiled_find_queries = functools.reduce(operator.iadd, tiled_find_queries_per_stage, [])
 
         # tile `get_queries: List[GetQuery]` -- we skip them for now (since they involve
         # a pointer to a find query that is complicated to tile, and there is not an
@@ -318,7 +307,7 @@ class VideoGroundingDataset(Sam3ImageDataset):
         sampled_find_queries_per_stage = [
             [queries[idx] for idx in sampled_inds] for queries in find_queries_per_stage
         ]
-        sampled_find_queries = sum(sampled_find_queries_per_stage, [])
+        sampled_find_queries = functools.reduce(operator.iadd, sampled_find_queries_per_stage, [])
         return Datapoint(
             images=datapoint.images,
             raw_images=datapoint.raw_images,

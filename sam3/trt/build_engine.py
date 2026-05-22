@@ -60,11 +60,26 @@ def _get_skip_types():
     """Return set of TRT layer types that should not have precision overrides."""
     skip_types = set()
     for type_name in (
-        "SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-        "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-        "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-        "NON_ZERO", "ONE_HOT", "GRID_SAMPLE",
-        "CONDITIONAL_INPUT", "CONDITIONAL_OUTPUT",
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
+        "CONDITIONAL_INPUT",
+        "CONDITIONAL_OUTPUT",
     ):
         if hasattr(trt.LayerType, type_name):
             skip_types.add(getattr(trt.LayerType, type_name))
@@ -137,7 +152,12 @@ def _apply_mixed_precision(network, config, mode="attention"):
             # Global blocks (7, 15, 23, 31) see 5184 tokens vs 576 for windowed
             _GLOBAL_BLOCKS = ("blocks.7/", "blocks.15/", "blocks.23/", "blocks.31/")
             is_global = any(blk in layer.name for blk in _GLOBAL_BLOCKS)
-            if is_global and layer.type in (matmul_type, softmax_type, norm_type, reduce_type):
+            if is_global and layer.type in (
+                matmul_type,
+                softmax_type,
+                norm_type,
+                reduce_type,
+            ):
                 force_fp32 = True
         elif mode == "norm-only":
             # Only LayerNorm + Softmax to FP32
@@ -163,9 +183,7 @@ def _apply_mixed_precision(network, config, mode="attention"):
                 if is_attn_core:
                     force_fp32 = True
         elif mode in ("attention", "all"):
-            if layer.type == softmax_type:
-                force_fp32 = True
-            elif layer.type == norm_type:
+            if layer.type == softmax_type or layer.type == norm_type:
                 force_fp32 = True
             elif layer.type == matmul_type:
                 if mode == "all":
@@ -308,7 +326,7 @@ def _list_layers(onnx_path: str):
         type_counts[type_name] += 1
         print(f"  [{i:4d}] {type_name:<24s} {layer.name}")
 
-    print(f"\nLayer type summary:")
+    print("\nLayer type summary:")
     for type_name, count in type_counts.most_common():
         print(f"  {type_name:<24s} {count}")
 
@@ -381,8 +399,10 @@ def build_engine(
         elif mixed_precision is None and layer_precisions is None:
             if engine_type == "backbone":
                 mixed_precision = "sensitive"
-                print("  Auto-applying mixed precision (sensitive) for backbone. "
-                      "Use --mixed-precision none for pure FP16.")
+                print(
+                    "  Auto-applying mixed precision (sensitive) for backbone. "
+                    "Use --mixed-precision none for pure FP16."
+                )
             # enc-dec: no auto-apply, pure FP16 is fine
 
     if int8:
@@ -391,9 +411,7 @@ def build_engine(
         config.set_flag(trt.BuilderFlag.INT8)
 
         if calib_images is None:
-            raise ValueError(
-                "--calib-images is required for INT8 calibration"
-            )
+            raise ValueError("--calib-images is required for INT8 calibration")
 
         if engine_type == "enc-dec":
             # Encoder-decoder calibrator needs the full model
@@ -473,9 +491,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Build TensorRT engine from SAM3 ONNX model"
     )
-    parser.add_argument(
-        "--onnx", required=True, help="Input ONNX model path"
-    )
+    parser.add_argument("--onnx", required=True, help="Input ONNX model path")
     parser.add_argument(
         "--output", default="backbone.engine", help="Output engine file path"
     )
@@ -485,12 +501,8 @@ def main():
         default="backbone",
         help="Engine type: 'backbone' (ViT-H) or 'enc-dec' (encoder+decoder+scoring)",
     )
-    parser.add_argument(
-        "--fp16", action="store_true", help="Enable FP16 precision"
-    )
-    parser.add_argument(
-        "--int8", action="store_true", help="Enable INT8 precision"
-    )
+    parser.add_argument("--fp16", action="store_true", help="Enable FP16 precision")
+    parser.add_argument("--int8", action="store_true", help="Enable INT8 precision")
     parser.add_argument(
         "--fp32", action="store_true", help="Force FP32 precision (no FP16/INT8)"
     )
@@ -531,39 +543,48 @@ def main():
         default=3,
         choices=[0, 1, 2, 3, 4, 5],
         help="Builder optimization level (0=fastest build, 5=max optimization). "
-             "Try 0 if engine build fails with OOM on large transformer models.",
+        "Try 0 if engine build fails with OOM on large transformer models.",
     )
     parser.add_argument(
         "--mixed-precision",
         choices=[
-            "none", "attn-v-only", "global-attn",
-            "norm-only", "norm-softmax-reduce", "attn-core",
-            "all-fp32", "sensitive", "attention", "all-matmul",
+            "none",
+            "attn-v-only",
+            "global-attn",
+            "norm-only",
+            "norm-softmax-reduce",
+            "attn-core",
+            "all-fp32",
+            "sensitive",
+            "attention",
+            "all-matmul",
         ],
         default=None,
         help="Mixed precision mode (from most surgical to most conservative): "
-             "'none' disables (pure FP16); "
-             "'attn-v-only' forces only attn@V MatMul+Softmax+Norm to FP32 (~96 layers); "
-             "'global-attn' forces all compute in global attention blocks (7,15,23,31) to FP32; "
-             "'norm-only' forces only LayerNorm+Softmax to FP32; "
-             "'attn-core' forces attention MatMul+Softmax+Norm to FP32 (~161 layers); "
-             "'attention' (default for FP16 backbone) forces all attention ops to FP32 (~225 layers); "
-             "'all-matmul' forces ALL MatMul+Softmax to FP32; "
-             "'all-fp32' forces everything except Conv to FP32.",
+        "'none' disables (pure FP16); "
+        "'attn-v-only' forces only attn@V MatMul+Softmax+Norm to FP32 (~96 layers); "
+        "'global-attn' forces all compute in global attention blocks (7,15,23,31) to FP32; "
+        "'norm-only' forces only LayerNorm+Softmax to FP32; "
+        "'attn-core' forces attention MatMul+Softmax+Norm to FP32 (~161 layers); "
+        "'attention' (default for FP16 backbone) forces all attention ops to FP32 (~225 layers); "
+        "'all-matmul' forces ALL MatMul+Softmax to FP32; "
+        "'all-fp32' forces everything except Conv to FP32.",
     )
     parser.add_argument(
         "--layer-precisions",
-        type=str, default=None, metavar="SPEC",
+        type=str,
+        default=None,
+        metavar="SPEC",
         help="Force specific layers to a precision. Format: "
-             "'pattern1:fp32,pattern2:fp32,...'. Supports wildcards: "
-             "'*norm*:fp32,*Softmax*:fp32'. Overrides --mixed-precision. "
-             "Mimics trtexec --layerPrecisions.",
+        "'pattern1:fp32,pattern2:fp32,...'. Supports wildcards: "
+        "'*norm*:fp32,*Softmax*:fp32'. Overrides --mixed-precision. "
+        "Mimics trtexec --layerPrecisions.",
     )
     parser.add_argument(
         "--list-layers",
         action="store_true",
         help="Parse ONNX and print all TRT layer names/types, then exit "
-             "(no engine build). Useful for designing --layer-precisions specs.",
+        "(no engine build). Useful for designing --layer-precisions specs.",
     )
     args = parser.parse_args()
 

@@ -68,7 +68,13 @@ class YTVIS(COCO):
         super().createIndex()
 
     @override
-    def getAnnIds(self, imgIds=[], catIds=[], areaRng=[], iscrowd=None):
+    def getAnnIds(self, imgIds=None, catIds=None, areaRng=None, iscrowd=None):
+        if areaRng is None:
+            areaRng = []
+        if catIds is None:
+            catIds = []
+        if imgIds is None:
+            imgIds = []
         if len(areaRng) > 0:
             logging.warning(
                 "Note that we filter out objects based on their *average* area across the video, not per frame area"
@@ -84,7 +90,7 @@ class YTVIS(COCO):
     def loadRes(self, resFile):
         # Adapted from COCO.loadRes to support tracklets/masklets
         res = YTVIS(ignore_gt_cats=self.ignore_gt_cats)
-        res.dataset["images"] = [img for img in self.dataset["images"]]
+        res.dataset["images"] = list(self.dataset["images"])
 
         if type(resFile) == str:
             with open(resFile) as f:
@@ -98,12 +104,12 @@ class YTVIS(COCO):
         assert set(annsImgIds) == (set(annsImgIds) & set(self.getImgIds())), (
             "Results do not correspond to current coco set"
         )
-        if "bboxes" in anns[0] and not anns[0]["bboxes"] == []:
+        if "bboxes" in anns[0] and anns[0]["bboxes"] != []:
             res.dataset["categories"] = copy.deepcopy(self.dataset["categories"])
             for id, ann in enumerate(anns):
                 bbs = [(bb if bb is not None else [0, 0, 0, 0]) for bb in ann["bboxes"]]
                 xxyy = [[bb[0], bb[0] + bb[2], bb[1], bb[1] + bb[3]] for bb in bbs]
-                if not "segmentations" in ann:
+                if "segmentations" not in ann:
                     ann["segmentations"] = [
                         [[x1, y1, x1, y2, x2, y2, x2, y1]] for (x1, x2, y1, y2) in xxyy
                     ]
@@ -132,7 +138,7 @@ class YTVIS(COCO):
         return res
 
     @override
-    def download(self, tarDir=None, imgIds=[]):
+    def download(self, tarDir=None, imgIds=None):
         raise NotImplementedError
 
     @override

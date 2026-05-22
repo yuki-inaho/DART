@@ -6,11 +6,15 @@
 Modules to compute the matching cost and solve the corresponding LSAP.
 """
 
+import functools
+import operator
+
 import numpy as np
 import torch
-from sam3.model.box_ops import box_cxcywh_to_xyxy, box_iou, generalized_box_iou
 from scipy.optimize import linear_sum_assignment
 from torch import nn
+
+from sam3.model.box_ops import box_cxcywh_to_xyxy, box_iou, generalized_box_iou
 
 
 def _do_matching(cost, repeats=1, return_tgt_indices=False, do_filtering=False):
@@ -164,7 +168,7 @@ class HungarianMatcher(nn.Module):
         costs = [c[i] for i, c in enumerate(np.split(C, sizes.cpu().numpy(), axis=-1))]
         indices = [_do_matching(c) for c in costs]
         batch_idx = torch.as_tensor(
-            sum([[i] * len(src) for i, src in enumerate(indices)], []), dtype=torch.long
+            functools.reduce(operator.iadd, [[i] * len(src) for i, src in enumerate(indices)], []), dtype=torch.long
         )
         src_idx = torch.from_numpy(np.concatenate(indices)).long()
         return batch_idx, src_idx
@@ -283,7 +287,7 @@ class BinaryHungarianMatcher(nn.Module):
             tgt_idx = None
 
         batch_idx = torch.as_tensor(
-            sum([[i] * len(src) for i, src in enumerate(indices)], []), dtype=torch.long
+            functools.reduce(operator.iadd, [[i] * len(src) for i, src in enumerate(indices)], []), dtype=torch.long
         )
         src_idx = torch.from_numpy(np.concatenate(indices)).long()
         return batch_idx, src_idx, tgt_idx
@@ -423,7 +427,7 @@ class BinaryFocalHungarianMatcher(nn.Module):
             tgt_idx = None
 
         batch_idx = torch.as_tensor(
-            sum([[i] * len(src) for i, src in enumerate(indices)], []), dtype=torch.long
+            functools.reduce(operator.iadd, [[i] * len(src) for i, src in enumerate(indices)], []), dtype=torch.long
         )
         src_idx = torch.from_numpy(np.concatenate(indices)).long()
         return batch_idx, src_idx, tgt_idx
@@ -650,13 +654,13 @@ class BinaryHungarianMatcherV2(nn.Module):
         if self.remove_samples_with_0_gt:
             kept_inds = batch_keep.nonzero().squeeze(1)
             batch_idx = torch.as_tensor(
-                sum([[kept_inds[i]] * len(src) for i, src in enumerate(indices)], []),
+                functools.reduce(operator.iadd, [[kept_inds[i]] * len(src) for i, src in enumerate(indices)], []),
                 dtype=torch.long,
                 device=device,
             )
         else:
             batch_idx = torch.as_tensor(
-                sum([[i] * len(src) for i, src in enumerate(indices)], []),
+                functools.reduce(operator.iadd, [[i] * len(src) for i, src in enumerate(indices)], []),
                 dtype=torch.long,
                 device=device,
             )

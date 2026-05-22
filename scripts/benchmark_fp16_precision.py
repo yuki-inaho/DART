@@ -42,16 +42,21 @@ def cosine_similarity(a, b):
 
 def get_pytorch_reference(checkpoint_path, image, device="cuda"):
     """Run PyTorch FP32 backbone and return reference outputs."""
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
 
     print("Loading PyTorch model for reference...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path=checkpoint_path, eval_mode=True,
+        device=device,
+        checkpoint_path=checkpoint_path,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
 
     # Run backbone
@@ -72,20 +77,26 @@ def get_pytorch_reference(checkpoint_path, image, device="cuda"):
 
 
 def build_and_benchmark_engine(
-    onnx_path, strategy, img_tensor, ref_outputs,
-    workspace_gb=4.0, opt_level=3, n_warmup=5, n_runs=20,
+    onnx_path,
+    strategy,
+    img_tensor,
+    ref_outputs,
+    workspace_gb=4.0,
+    opt_level=3,
+    n_warmup=5,
+    n_runs=20,
 ):
     """Build a TRT engine with the given strategy, benchmark speed and accuracy."""
-    import tensorrt as trt
     from sam3.trt.trt_backbone import TRTBackbone
 
     engine_path = f"backbone_{strategy}.engine"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Strategy: {strategy}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Build engine
     from sam3.trt.build_engine import build_engine
+
     build_engine(
         onnx_path=onnx_path,
         output_path=engine_path,
@@ -162,7 +173,8 @@ def main():
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--runs", type=int, default=20)
     parser.add_argument(
-        "--strategies", nargs="+",
+        "--strategies",
+        nargs="+",
         default=["pure-fp16", "norm-only", "norm-softmax-reduce", "attention"],
         help="Strategies to test",
     )
@@ -177,7 +189,9 @@ def main():
 
     # Get PyTorch reference
     ref_outputs, img_tensor = get_pytorch_reference(
-        args.checkpoint, image, device=device,
+        args.checkpoint,
+        image,
+        device=device,
     )
 
     # Benchmark each strategy
@@ -197,21 +211,25 @@ def main():
             results.append(result)
         except Exception as e:
             print(f"  ERROR: {e}")
-            results.append({
-                "strategy": strategy,
-                "avg_ms": float("inf"),
-                "min_ms": float("inf"),
-                "std_ms": 0,
-                "cosine": {},
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "strategy": strategy,
+                    "avg_ms": float("inf"),
+                    "min_ms": float("inf"),
+                    "std_ms": 0,
+                    "cosine": {},
+                    "error": str(e),
+                }
+            )
 
     # Print summary table
-    print(f"\n\n{'='*80}")
+    print(f"\n\n{'=' * 80}")
     print("RESULTS SUMMARY")
-    print(f"{'='*80}")
-    print(f"{'Strategy':<25s} {'Avg ms':>8s} {'Min ms':>8s} {'Cos (avg)':>10s} {'Cos (min)':>10s}")
-    print(f"{'-'*25} {'-'*8} {'-'*8} {'-'*10} {'-'*10}")
+    print(f"{'=' * 80}")
+    print(
+        f"{'Strategy':<25s} {'Avg ms':>8s} {'Min ms':>8s} {'Cos (avg)':>10s} {'Cos (min)':>10s}"
+    )
+    print(f"{'-' * 25} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 10}")
     for r in results:
         if "error" in r:
             print(f"{r['strategy']:<25s} {'ERROR':>8s} {'':>8s} {'':>10s} {r['error']}")
@@ -225,7 +243,7 @@ def main():
         )
 
     # Detailed per-output cosines
-    print(f"\nPer-output cosine similarities:")
+    print("\nPer-output cosine similarities:")
     for r in results:
         if "error" in r:
             continue
@@ -234,7 +252,7 @@ def main():
             status = "OK" if cos > 0.99 else "WARN" if cos > 0.9 else "BAD"
             print(f"    {key}: {cos:.6f} [{status}]")
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Engine files saved (for manual testing):")
     for r in results:
         if "error" not in r:

@@ -6,18 +6,19 @@ This tests forcing individual layer types to FP32 to find the culprit.
 """
 
 import sys
+from collections import Counter
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from pathlib import Path
-from collections import Counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import tensorrt as trt
+
+from sam3.model.vitdet import get_abs_pos
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
-from sam3.model.vitdet import get_abs_pos
-
-import tensorrt as trt
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = "cuda"
@@ -42,9 +43,14 @@ def get_trunk_input(model):
         x = trunk.patch_embed(dummy)
         h, w = x.shape[1], x.shape[2]
         if trunk.pos_embed is not None:
-            x = x + get_abs_pos(trunk.pos_embed, trunk.pretrain_use_cls_token,
-                                (h, w), trunk.retain_cls_token, tiling=trunk.tile_abs_pos)
-        if hasattr(trunk, 'ln_pre') and trunk.ln_pre is not None:
+            x = x + get_abs_pos(
+                trunk.pos_embed,
+                trunk.pretrain_use_cls_token,
+                (h, w),
+                trunk.retain_cls_token,
+                tiling=trunk.tile_abs_pos,
+            )
+        if hasattr(trunk, "ln_pre") and trunk.ln_pre is not None:
             x = trunk.ln_pre(x)
     return x
 
@@ -58,9 +64,13 @@ def export_blocks(model, num_blocks, onnx_path):
     patch_rope_for_export(model.backbone)
     with torch.inference_mode():
         torch.onnx.export(
-            wrapper, (x_input,), onnx_path,
-            input_names=["tokens"], output_names=["output"],
-            opset_version=17, do_constant_folding=True,
+            wrapper,
+            (x_input,),
+            onnx_path,
+            input_names=["tokens"],
+            output_names=["output"],
+            opset_version=17,
+            do_constant_folding=True,
         )
     unpatch_rope(model.backbone)
     return x_input
@@ -69,7 +79,9 @@ def export_blocks(model, num_blocks, onnx_path):
 def build_trt(onnx_path, fp32_types=None, fp32_names=None):
     """Build TRT engine, optionally forcing layers to FP32."""
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -127,7 +139,9 @@ def run_trt(engine_bytes, x_input):
 def get_layer_info(onnx_path):
     """Get TRT layer types and names."""
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_path, "rb") as f:
         parser.parse(f.read())
@@ -155,7 +169,9 @@ def cosine_sim(a, b):
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     trunk = model.backbone.vision_backbone.trunk
 
@@ -178,7 +194,9 @@ def main():
         print(f"    {t:30s}: {c}")
 
     # Test each layer type forced to FP32
-    print(f"\n  {'FP32 layer type(s)':>40s} | {'Cosine':>10s} | {'max_diff':>10s} | {'FP32/Total':>12s}")
+    print(
+        f"\n  {'FP32 layer type(s)':>40s} | {'Cosine':>10s} | {'max_diff':>10s} | {'FP32/Total':>12s}"
+    )
     print("  " + "-" * 85)
 
     tests = [
@@ -204,7 +222,9 @@ def main():
             Y = run_trt(eng, x_input)
             cos = cosine_sim(Y_fp32, Y)
             diff = (Y_fp32 - Y).abs().max().item()
-            print(f"  {label:>40s} | {cos:>10.6f} | {diff:>10.4f} | {n_fp32:>4d}/{n_total:<4d}")
+            print(
+                f"  {label:>40s} | {cos:>10.6f} | {diff:>10.4f} | {n_fp32:>4d}/{n_total:<4d}"
+            )
         except Exception as e:
             print(f"  {label:>40s} | FAILED: {e}")
 
@@ -226,7 +246,9 @@ def main():
     for t, c in sorted(types.items(), key=lambda x: -x[1])[:10]:
         print(f"    {t:30s}: {c}")
 
-    print(f"\n  {'FP32 layer type(s)':>40s} | {'Cosine':>10s} | {'max_diff':>10s} | {'FP32/Total':>12s}")
+    print(
+        f"\n  {'FP32 layer type(s)':>40s} | {'Cosine':>10s} | {'max_diff':>10s} | {'FP32/Total':>12s}"
+    )
     print("  " + "-" * 85)
 
     for fp32_set, label in [
@@ -243,7 +265,9 @@ def main():
             Y = run_trt(eng, x_input)
             cos = cosine_sim(Y_fp32, Y)
             diff = (Y_fp32 - Y).abs().max().item()
-            print(f"  {label:>40s} | {cos:>10.6f} | {diff:>10.4f} | {n_fp32:>4d}/{n_total:<4d}")
+            print(
+                f"  {label:>40s} | {cos:>10.6f} | {diff:>10.4f} | {n_fp32:>4d}/{n_total:<4d}"
+            )
         except Exception as e:
             print(f"  {label:>40s} | FAILED: {e}")
 

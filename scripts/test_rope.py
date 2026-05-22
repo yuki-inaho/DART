@@ -2,7 +2,8 @@
 """Minimal test: compare original vs real-valued RoPE on identical inputs."""
 
 import torch
-from sam3.model.vitdet import apply_rotary_enc, compute_axial_cis, Attention
+
+from sam3.model.vitdet import Attention, apply_rotary_enc, compute_axial_cis
 from sam3.trt.rope_onnx import apply_rotary_enc_real
 
 
@@ -12,7 +13,7 @@ def test_rope_math():
 
     # Create typical RoPE frequencies (2D axial, like the ViT uses)
     head_dim = 80  # typical for ViT-H with 16 heads, 1280 / 16 = 80
-    L = 72 * 72    # sequence length for 1008/14 = 72 patches
+    L = 72 * 72  # sequence length for 1008/14 = 72 patches
 
     freqs_cis = compute_axial_cis(
         dim=head_dim, end_x=72, end_y=72
@@ -37,8 +38,12 @@ def test_rope_math():
     # Compare
     q_diff = (q_orig.float() - q_real.float()).abs()
     k_diff = (k_orig.float() - k_real.float()).abs()
-    print(f"q: max_diff={q_diff.max().item():.2e}, mean_diff={q_diff.mean().item():.2e}")
-    print(f"k: max_diff={k_diff.max().item():.2e}, mean_diff={k_diff.mean().item():.2e}")
+    print(
+        f"q: max_diff={q_diff.max().item():.2e}, mean_diff={q_diff.mean().item():.2e}"
+    )
+    print(
+        f"k: max_diff={k_diff.max().item():.2e}, mean_diff={k_diff.mean().item():.2e}"
+    )
 
     if q_diff.max() < 1e-5 and k_diff.max() < 1e-5:
         print("PASS: RoPE math is equivalent")
@@ -77,8 +82,12 @@ def test_rope_with_cls_token():
 
     q_diff = (q_orig.float() - q_real.float()).abs()
     k_diff = (k_orig.float() - k_real.float()).abs()
-    print(f"q: max_diff={q_diff.max().item():.2e}, mean_diff={q_diff.mean().item():.2e}")
-    print(f"k: max_diff={k_diff.max().item():.2e}, mean_diff={k_diff.mean().item():.2e}")
+    print(
+        f"q: max_diff={q_diff.max().item():.2e}, mean_diff={q_diff.mean().item():.2e}"
+    )
+    print(
+        f"k: max_diff={k_diff.max().item():.2e}, mean_diff={k_diff.mean().item():.2e}"
+    )
 
     if q_diff.max() < 1e-5:
         print("PASS")
@@ -106,11 +115,13 @@ def test_rope_windowed():
     q = torch.randn(B, H, L, head_dim)
     k = torch.randn(B, H, L, head_dim)
 
-    q_orig, k_orig = apply_rotary_enc(q, k, freqs_cis=freqs_cis)
-    q_real, k_real = apply_rotary_enc_real(q, k, rope_cos, rope_sin)
+    q_orig, _k_orig = apply_rotary_enc(q, k, freqs_cis=freqs_cis)
+    q_real, _k_real = apply_rotary_enc_real(q, k, rope_cos, rope_sin)
 
     q_diff = (q_orig.float() - q_real.float()).abs()
-    print(f"q: max_diff={q_diff.max().item():.2e}, mean_diff={q_diff.mean().item():.2e}")
+    print(
+        f"q: max_diff={q_diff.max().item():.2e}, mean_diff={q_diff.mean().item():.2e}"
+    )
 
     if q_diff.max() < 1e-5:
         print("PASS")
@@ -143,7 +154,7 @@ def test_full_patching():
     unpatch_rope(backbone)
 
     # Compare
-    for i, (name, shape) in enumerate(
+    for i, (name, _shape) in enumerate(
         [("FPN[0] 288x288", None), ("FPN[1] 144x144", None), ("FPN[2] 72x72", None)]
     ):
         orig_f = orig_out["backbone_fpn"][i].float()
@@ -152,8 +163,10 @@ def test_full_patching():
         cos = torch.nn.functional.cosine_similarity(
             orig_f.flatten().unsqueeze(0), patch_f.flatten().unsqueeze(0)
         )
-        print(f"  {name}: max_diff={diff.max().item():.2e}, "
-              f"mean_diff={diff.mean().item():.2e}, cosine={cos.item():.6f}")
+        print(
+            f"  {name}: max_diff={diff.max().item():.2e}, "
+            f"mean_diff={diff.mean().item():.2e}, cosine={cos.item():.6f}"
+        )
 
     # Also test per-module: hook into each attention module and compare
     print("\n  Per-module RoPE comparison (first 5 modules):")
@@ -174,8 +187,8 @@ def test_full_patching():
         q = torch.randn(1, module.num_heads, L, module.head_dim, device="cuda")
         k = torch.randn(1, module.num_heads, L, module.head_dim, device="cuda")
 
-        q_orig, k_orig = apply_rotary_enc(q, k, freqs_cis=freqs_cis)
-        q_real, k_real = apply_rotary_enc_real(q, k, rope_cos, rope_sin)
+        q_orig, _k_orig = apply_rotary_enc(q, k, freqs_cis=freqs_cis)
+        q_real, _k_real = apply_rotary_enc_real(q, k, rope_cos, rope_sin)
 
         q_diff = (q_orig.float() - q_real.float()).abs()
         print(f"    {name}: L={L}, max_diff={q_diff.max().item():.2e}")
@@ -190,6 +203,7 @@ if __name__ == "__main__":
 
     # GPU test with actual model
     import sys
+
     if "--full" in sys.argv:
         test_full_patching()
     else:

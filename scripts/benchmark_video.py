@@ -47,19 +47,25 @@ from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
 from sam3.model_builder import (
     build_pruned_sam3_image_model,
     build_sam3_image_model,
     load_pruned_config,
 )
-from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
 
 
 def draw_detections(frame_bgr, results, class_names, tracks=None):
     """Draw boxes and labels on an OpenCV BGR frame (in-place)."""
     COLOURS = [
-        (75, 25, 230), (75, 180, 60), (200, 130, 0), (25, 225, 255),
-        (48, 130, 245), (180, 30, 145), (240, 240, 70), (230, 50, 240),
+        (75, 25, 230),
+        (75, 180, 60),
+        (200, 130, 0),
+        (25, 225, 255),
+        (48, 130, 245),
+        (180, 30, 145),
+        (240, 240, 70),
+        (230, 50, 240),
     ]
 
     if tracks is not None:
@@ -71,16 +77,22 @@ def draw_detections(frame_bgr, results, class_names, tracks=None):
             x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
             cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), colour, 2)
             label = f"#{track.track_id} {cls_name} {track.score:.2f}"
-            (tw, th), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(
-                frame_bgr, (x1, max(y1 - th - 6, 0)),
-                (x1 + tw + 4, max(y1, th + 6)), colour, -1,
+                frame_bgr,
+                (x1, max(y1 - th - 6, 0)),
+                (x1 + tw + 4, max(y1, th + 6)),
+                colour,
+                -1,
             )
             cv2.putText(
-                frame_bgr, label, (x1 + 2, max(y1 - 4, th + 2)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
+                frame_bgr,
+                label,
+                (x1 + 2, max(y1 - 4, th + 2)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
             )
     else:
         for i in range(len(results["scores"])):
@@ -92,23 +104,38 @@ def draw_detections(frame_bgr, results, class_names, tracks=None):
             x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
             cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), colour, 2)
             label = f"{cls_name} {score:.2f}"
-            (tw, th), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(
-                frame_bgr, (x1, max(y1 - th - 6, 0)),
-                (x1 + tw + 4, max(y1, th + 6)), colour, -1,
+                frame_bgr,
+                (x1, max(y1 - th - 6, 0)),
+                (x1 + tw + 4, max(y1, th + 6)),
+                colour,
+                -1,
             )
             cv2.putText(
-                frame_bgr, label, (x1 + 2, max(y1 - 4, th + 2)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
+                frame_bgr,
+                label,
+                (x1 + 2, max(y1 - 4, th + 2)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
             )
     return frame_bgr
 
 
 @torch.inference_mode()
-def run_sequential(predictor, video_path, max_frames, confidence, nms,
-                   tracker=None, writer=None, display=False, class_names=None):
+def run_sequential(
+    predictor,
+    video_path,
+    max_frames,
+    confidence,
+    nms,
+    tracker=None,
+    writer=None,
+    display=False,
+    class_names=None,
+):
     """Run video with sequential backbone → enc-dec (no stream overlap)."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -171,12 +198,17 @@ def run_sequential(predictor, video_path, max_frames, confidence, nms,
             )
 
         if frame_idx % 30 == 0:
-            print(f"  Frame {frame_idx}: {total_ms:.1f}ms "
-                  f"(bb={bb_ms:.1f} + pred={pred_ms:.1f}), {n_dets} dets")
+            print(
+                f"  Frame {frame_idx}: {total_ms:.1f}ms "
+                f"(bb={bb_ms:.1f} + pred={pred_ms:.1f}), {n_dets} dets"
+            )
 
         if writer is not None or display:
             annotated = draw_detections(
-                frame_bgr.copy(), results, class_names, tracks=tracks,
+                frame_bgr.copy(),
+                results,
+                class_names,
+                tracks=tracks,
             )
             if writer is not None:
                 writer.write(annotated)
@@ -210,11 +242,22 @@ def run_sequential(predictor, video_path, max_frames, confidence, nms,
     }
 
 
-def run_pipelined(predictor, video_path, max_frames, confidence, nms,
-                  backbone_engine_path=None, split_backbone=False,
-                  split_block=20, cuda_graphs=False,
-                  trt_split_backbone=None,
-                  tracker=None, writer=None, display=False, class_names=None):
+def run_pipelined(
+    predictor,
+    video_path,
+    max_frames,
+    confidence,
+    nms,
+    backbone_engine_path=None,
+    split_backbone=False,
+    split_block=20,
+    cuda_graphs=False,
+    trt_split_backbone=None,
+    tracker=None,
+    writer=None,
+    display=False,
+    class_names=None,
+):
     """Run video with pipelined backbone || enc-dec (CUDA stream overlap).
 
     Uses TRTSplitPipelinedVideoProcessor for split TRT backbone,
@@ -224,12 +267,14 @@ def run_pipelined(predictor, video_path, max_frames, confidence, nms,
     """
     if trt_split_backbone is not None:
         from sam3.video_pipeline import TRTSplitPipelinedVideoProcessor
+
         pipeline = TRTSplitPipelinedVideoProcessor(
             predictor=predictor,
             split_backbone=trt_split_backbone,
         )
     elif split_backbone:
         from sam3.video_pipeline import SplitBackboneVideoProcessor
+
         pipeline = SplitBackboneVideoProcessor(
             predictor=predictor,
             split_block=split_block,
@@ -240,6 +285,7 @@ def run_pipelined(predictor, video_path, max_frames, confidence, nms,
         dummy_img = Image.new("RGB", (predictor.resolution, predictor.resolution))
         with torch.inference_mode():
             from torchvision.transforms import v2
+
             dummy_tensor = v2.functional.to_image(dummy_img).to(predictor.device)
             dummy_tensor = predictor.transform(dummy_tensor).unsqueeze(0)
             for _ in range(3):
@@ -256,12 +302,14 @@ def run_pipelined(predictor, video_path, max_frames, confidence, nms,
         torch.cuda.synchronize()
     elif backbone_engine_path is not None:
         from sam3.video_pipeline import PipelinedVideoProcessor
+
         pipeline = PipelinedVideoProcessor(
             predictor=predictor,
             backbone_engine_path=backbone_engine_path,
         )
     else:
         from sam3.video_pipeline import CompiledVideoProcessor
+
         pipeline = CompiledVideoProcessor(predictor=predictor)
 
     def on_frame(frame_idx, results, frame_bgr):
@@ -285,7 +333,10 @@ def run_pipelined(predictor, video_path, max_frames, confidence, nms,
 
         if writer is not None or display:
             annotated = draw_detections(
-                frame_bgr.copy(), results, class_names, tracks=tracks,
+                frame_bgr.copy(),
+                results,
+                class_names,
+                tracks=tracks,
             )
             if writer is not None:
                 writer.write(annotated)
@@ -328,21 +379,29 @@ def main():
     )
     parser.add_argument("--video", required=True, help="Input video file")
     parser.add_argument(
-        "--classes", nargs="+", type=str,
+        "--classes",
+        nargs="+",
+        type=str,
         default=["car", "pedestrian", "bicycle"],
         help="Target class names",
     )
     parser.add_argument(
-        "--coco", action="store_true",
+        "--coco",
+        action="store_true",
         help="Use all 80 COCO classes (overrides --classes)",
     )
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument(
-        "--trt", type=str, default=None, metavar="ENGINE",
+        "--trt",
+        type=str,
+        default=None,
+        metavar="ENGINE",
         help="TRT backbone engine path (use instead of --compile)",
     )
     parser.add_argument(
-        "--compile", type=str, default=None,
+        "--compile",
+        type=str,
+        default=None,
         choices=["default", "reduce-overhead", "max-autotune"],
         help="torch.compile mode for backbone (use instead of --trt)",
     )
@@ -356,32 +415,46 @@ def main():
     parser.add_argument("--max-frames", type=int, default=100)
     parser.add_argument("--text-cache", type=str, default=None, metavar="PATH")
     parser.add_argument(
-        "--mode", type=str, default="both",
+        "--mode",
+        type=str,
+        default="both",
         choices=["sequential", "pipelined", "both"],
         help="Benchmark mode: sequential, pipelined, or both (default: both)",
     )
     parser.add_argument(
-        "--mask-blocks", type=str, default=None,
+        "--mask-blocks",
+        type=str,
+        default=None,
         help="Comma-separated sub-block pruning spec (e.g. '25:attn,28:mlp')",
     )
     parser.add_argument(
-        "--split-backbone", action="store_true",
+        "--split-backbone",
+        action="store_true",
         help="Split ViT backbone across pipeline stages (requires --compile)",
     )
     parser.add_argument(
-        "--split-block", type=int, default=20,
+        "--split-block",
+        type=int,
+        default=20,
         help="Block index to split ViT at (default 20)",
     )
     parser.add_argument(
-        "--cuda-graphs", action="store_true",
+        "--cuda-graphs",
+        action="store_true",
         help="Use manual CUDA graph capture with split backbone",
     )
     parser.add_argument(
-        "--trt-part1", type=str, default=None, metavar="ENGINE",
+        "--trt-part1",
+        type=str,
+        default=None,
+        metavar="ENGINE",
         help="TRT Part1 engine for split backbone pipeline",
     )
     parser.add_argument(
-        "--trt-part2", type=str, default=None, metavar="ENGINE",
+        "--trt-part2",
+        type=str,
+        default=None,
+        metavar="ENGINE",
         help="TRT Part2 engine for split backbone pipeline",
     )
     # Tracking
@@ -389,12 +462,18 @@ def main():
     parser.add_argument("--track-thresh", type=float, default=0.5)
     parser.add_argument("--match-thresh", type=float, default=0.5)
     parser.add_argument("--max-time-lost", type=int, default=30)
-    parser.add_argument("--class-agnostic-nms", type=float, default=None, metavar="THRESH",
-                        help="Class-agnostic NMS threshold applied before tracking. Disabled by default.")
+    parser.add_argument(
+        "--class-agnostic-nms",
+        type=float,
+        default=None,
+        metavar="THRESH",
+        help="Class-agnostic NMS threshold applied before tracking. Disabled by default.",
+    )
     args = parser.parse_args()
 
     if args.coco:
         from sam3.coco_classes import COCO_CLASSES
+
         args.classes = COCO_CLASSES
 
     if args.imgsz % 14 != 0:
@@ -420,8 +499,10 @@ def main():
     # Determine backbone mode
     if args.trt_part1 and args.trt_part2:
         backbone_mode = "trt-split"
-        backbone_label = (f"TRT split ({os.path.basename(args.trt_part1)} + "
-                          f"{os.path.basename(args.trt_part2)})")
+        backbone_label = (
+            f"TRT split ({os.path.basename(args.trt_part1)} + "
+            f"{os.path.basename(args.trt_part2)})"
+        )
     elif args.trt:
         backbone_mode = "trt"
         backbone_label = f"TRT ({os.path.basename(args.trt)})"
@@ -446,11 +527,7 @@ def main():
 
     # --- Load model ---
     text_cache_exists = args.text_cache and os.path.exists(args.text_cache)
-    use_stub = (
-        text_cache_exists
-        and args.trt_enc_dec
-        and args.checkpoint is None
-    )
+    use_stub = text_cache_exists and args.trt_enc_dec and args.checkpoint is None
 
     # Parse mask_blocks
     mask_blocks = None
@@ -459,6 +536,7 @@ def main():
 
     if use_stub:
         from sam3.model.sam3_multiclass_fast import _TRTModelStub
+
         print("Using lightweight model stub (text from cache, no checkpoint)")
         model = _TRTModelStub(device=device)
     else:
@@ -466,20 +544,21 @@ def main():
             print("NOTE: No --checkpoint, will attempt HuggingFace download")
         skip_msg = f", mask_blocks={mask_blocks}" if mask_blocks else ""
         print(f"Loading SAM3 model...{skip_msg}")
-        pruned_config = (
-            load_pruned_config(args.checkpoint) if args.checkpoint else None
-        )
+        pruned_config = load_pruned_config(args.checkpoint) if args.checkpoint else None
         if pruned_config is not None:
             model = build_pruned_sam3_image_model(
                 checkpoint_path=args.checkpoint,
                 pruning_config=pruned_config,
-                device=device, eval_mode=True,
+                device=device,
+                eval_mode=True,
             )
             if model.transformer.decoder.presence_token is not None:
                 model.transformer.decoder.presence_token = None
         else:
             model = build_sam3_image_model(
-                device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+                device=device,
+                checkpoint_path=args.checkpoint,
+                eval_mode=True,
                 mask_blocks=mask_blocks,
             )
 
@@ -491,7 +570,8 @@ def main():
     # --- Create predictor ---
     # For trt-split mode, don't pass --trt (split backbone is separate)
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device,
+        model,
+        device=device,
         resolution=args.imgsz,
         compile_mode=args.compile if backbone_mode == "compile" else None,
         trt_engine_path=args.trt if backbone_mode != "trt-split" else None,
@@ -505,6 +585,7 @@ def main():
     trt_split_bb = None
     if backbone_mode == "trt-split":
         from sam3.trt.trt_backbone import TRTSplitBackbone
+
         pos_module = model.backbone.vision_backbone.position_encoding
         trt_split_bb = TRTSplitBackbone(
             part1_engine_path=args.trt_part1,
@@ -544,6 +625,7 @@ def main():
         if not args.track:
             return None
         from sam3.tracking import BYTETracker
+
         ca_nms = args.class_agnostic_nms if args.class_agnostic_nms is not None else 1.0
         return BYTETracker(
             track_thresh=args.track_thresh,
@@ -557,14 +639,17 @@ def main():
 
     # --- Sequential benchmark ---
     if run_seq:
-        print(f"\n{'='*55}")
-        print(f"SEQUENTIAL: backbone -> enc-dec (no overlap)")
-        print(f"{'='*55}")
+        print(f"\n{'=' * 55}")
+        print("SEQUENTIAL: backbone -> enc-dec (no overlap)")
+        print(f"{'=' * 55}")
         tracker = make_tracker()
 
         seq_stats = run_sequential(
-            predictor, args.video, args.max_frames,
-            args.confidence, args.nms,
+            predictor,
+            args.video,
+            args.max_frames,
+            args.confidence,
+            args.nms,
             tracker=tracker,
             class_names=args.classes,
         )
@@ -573,15 +658,15 @@ def main():
 
     # --- Pipelined benchmark ---
     if run_pipe:
-        print(f"\n{'='*55}")
+        print(f"\n{'=' * 55}")
         if backbone_mode == "trt-split":
-            print(f"TRT-SPLIT-PIPELINED: part1(N+1) || (part2(N) + enc-dec(N))")
+            print("TRT-SPLIT-PIPELINED: part1(N+1) || (part2(N) + enc-dec(N))")
         elif args.split_backbone:
-            print(f"SPLIT-PIPELINED: part1(N+1) || (part2(N) + enc-dec(N))")
+            print("SPLIT-PIPELINED: part1(N+1) || (part2(N) + enc-dec(N))")
             print(f"  split_block={args.split_block}, cuda_graphs={args.cuda_graphs}")
         else:
-            print(f"PIPELINED: backbone(N+1) || enc-dec(N) (CUDA streams)")
-        print(f"{'='*55}")
+            print("PIPELINED: backbone(N+1) || enc-dec(N) (CUDA streams)")
+        print(f"{'=' * 55}")
         tracker = make_tracker()
 
         # Video writer only for pipelined (or if only running pipelined)
@@ -597,15 +682,20 @@ def main():
 
         try:
             pipe_stats = run_pipelined(
-                predictor, args.video, args.max_frames,
-                args.confidence, args.nms,
+                predictor,
+                args.video,
+                args.max_frames,
+                args.confidence,
+                args.nms,
                 backbone_engine_path=args.trt,
                 split_backbone=args.split_backbone,
                 split_block=args.split_block,
                 cuda_graphs=args.cuda_graphs,
                 trt_split_backbone=trt_split_bb,
-                tracker=tracker, writer=writer,
-                display=args.display, class_names=args.classes,
+                tracker=tracker,
+                writer=writer,
+                display=args.display,
+                class_names=args.classes,
             )
         except KeyboardInterrupt:
             print("\nStopped by user.")
@@ -627,20 +717,20 @@ def main():
         pipe_fps = pipe.get("steady_state_fps", 0)
         speedup = seq_ms / pipe_ms if pipe_ms > 0 else 0
 
-        print(f"\n{'='*55}")
-        print(f"COMPARISON")
-        print(f"{'='*55}")
+        print(f"\n{'=' * 55}")
+        print("COMPARISON")
+        print(f"{'=' * 55}")
         print(f"  {'Mode':<15} {'ms/frame':>10} {'FPS':>8} {'Speedup':>10}")
-        print(f"  {'-'*15} {'-'*10} {'-'*8} {'-'*10}")
+        print(f"  {'-' * 15} {'-' * 10} {'-' * 8} {'-' * 10}")
         print(f"  {'Sequential':<15} {seq_ms:>10.1f} {seq_fps:>8.1f} {'1.00x':>10}")
         print(f"  {'Pipelined':<15} {pipe_ms:>10.1f} {pipe_fps:>8.1f} {speedup:>9.2f}x")
         if seq.get("steady_bb_ms"):
-            print(f"\n  Sequential breakdown:")
+            print("\n  Sequential breakdown:")
             print(f"    Backbone:  {seq['steady_bb_ms']:.1f}ms")
             print(f"    Enc-dec:   {seq['steady_pred_ms']:.1f}ms")
             print(f"    Total:     {seq_ms:.1f}ms (sum)")
             print(f"  Pipelined:   {pipe_ms:.1f}ms (max of backbone, enc-dec)")
-        print(f"{'='*55}")
+        print(f"{'=' * 55}")
 
     if args.display:
         cv2.destroyAllWindows()

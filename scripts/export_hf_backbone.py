@@ -78,10 +78,10 @@ class HFBackbonePart1ForExport(nn.Module):
         H = pixel_values.shape[-2] // self.patch_size
         W = pixel_values.shape[-1] // self.patch_size
         D = x.shape[-1]
-        x = x.view(B, H, W, D)    # [B, H, W, D] (spatial BHWD)
-        x = self.layer_norm(x)    # norm BEFORE layers
+        x = x.view(B, H, W, D)  # [B, H, W, D] (spatial BHWD)
+        x = self.layer_norm(x)  # norm BEFORE layers
         for block in self.blocks:
-            x = block(x)          # Sam3ViTLayer returns tensor directly
+            x = block(x)  # Sam3ViTLayer returns tensor directly
         return x  # [B, H, W, D]
 
 
@@ -156,8 +156,10 @@ def _apply_mask_blocks(vision_encoder, mask_blocks):
 
     for block_idx, sub_types in mask_blocks.items():
         if block_idx >= len(layers):
-            print(f"  WARNING: block {block_idx} out of range "
-                  f"(model has {len(layers)} layers)")
+            print(
+                f"  WARNING: block {block_idx} out of range "
+                f"(model has {len(layers)} layers)"
+            )
             continue
 
         layer = layers[block_idx]
@@ -184,8 +186,10 @@ def _apply_mask_blocks(vision_encoder, mask_blocks):
                     )
                     if orig_layer.window_size > 0:
                         hidden_states = window_unpartition(
-                            hidden_states, orig_layer.window_size,
-                            pad_hw, (height, width)
+                            hidden_states,
+                            orig_layer.window_size,
+                            pad_hw,
+                            (height, width),
                         )
                     hidden_states = residual + hidden_states
 
@@ -225,7 +229,9 @@ def _apply_skip_blocks(vision_encoder, skip_blocks):
     count = 0
     for idx in skip_blocks:
         if idx >= len(layers):
-            print(f"  WARNING: block {idx} out of range (model has {len(layers)} layers)")
+            print(
+                f"  WARNING: block {idx} out of range (model has {len(layers)} layers)"
+            )
             continue
 
         def _identity_forward(self_unused, hidden_states, **kwargs):
@@ -242,18 +248,23 @@ def export_split_onnx(output_dir, split_block, imgsz=1008, mask_blocks=None):
     """Export HF SAM3 backbone as two ONNX models (Part1 + Part2) via dynamo."""
     from transformers.models.sam3 import Sam3Model
 
-    print(f"Loading HuggingFace SAM3 model for split export (split_block={split_block})...")
+    print(
+        f"Loading HuggingFace SAM3 model for split export (split_block={split_block})..."
+    )
 
     kwargs = {}
     if imgsz != 1008:
         from transformers import AutoConfig
+
         config = AutoConfig.from_pretrained("facebook/sam3")
         config.image_size = imgsz
         config.detector_config.image_size = imgsz
         config.detector_config.vision_config.backbone_config.image_size = imgsz
         P = imgsz // 14
         config.detector_config.vision_config.backbone_feature_sizes = [
-            [P * 4, P * 4], [P * 2, P * 2], [P, P]
+            [P * 4, P * 4],
+            [P * 2, P * 2],
+            [P, P],
         ]
         kwargs["config"] = config
         print(f"  Overriding image_size={imgsz} (spatial={P}x{P})")
@@ -276,15 +287,16 @@ def export_split_onnx(output_dir, split_block, imgsz=1008, mask_blocks=None):
 
     # Verify Part1
     dummy_pixels = torch.randn(1, 3, imgsz, imgsz)
-    print(f"Running Part1 forward pass...")
+    print("Running Part1 forward pass...")
     with torch.no_grad():
         intermediate = part1(dummy_pixels)
     print(f"  Part1 output: {list(intermediate.shape)}")  # [1, P, P, D]
-    assert intermediate.shape == (1, P, P, D), \
+    assert intermediate.shape == (1, P, P, D), (
         f"Expected [1, {P}, {P}, {D}], got {list(intermediate.shape)}"
+    )
 
     # Verify Part2
-    print(f"Running Part2 forward pass...")
+    print("Running Part2 forward pass...")
     with torch.no_grad():
         fpn0, fpn1, fpn2 = part2(intermediate)
     print(f"  fpn_0: {list(fpn0.shape)}")
@@ -295,7 +307,9 @@ def export_split_onnx(output_dir, split_block, imgsz=1008, mask_blocks=None):
     full_wrapper = HFBackboneForExport(model.vision_encoder).cpu().eval()
     with torch.no_grad():
         ref0, ref1, ref2 = full_wrapper(dummy_pixels)
-    for i, (split_out, ref_out) in enumerate([(fpn0, ref0), (fpn1, ref1), (fpn2, ref2)]):
+    for i, (split_out, ref_out) in enumerate(
+        [(fpn0, ref0), (fpn1, ref1), (fpn2, ref2)]
+    ):
         diff = (split_out - ref_out).abs().max().item()
         print(f"  fpn_{i} max diff (split vs full): {diff:.6f}")
         assert diff < 1e-4, f"Split output diverges from full: max_diff={diff}"
@@ -334,6 +348,7 @@ def _load_pruned_checkpoint_into_hf(vision_encoder, pruned_checkpoint_path):
     Returns the skip_blocks set from the checkpoint metadata.
     """
     import torch
+
     from sam3.model_builder import build_sam3_image_model
 
     print(f"  Loading pruned checkpoint: {pruned_checkpoint_path}")
@@ -363,7 +378,9 @@ def _load_pruned_checkpoint_into_hf(vision_encoder, pruned_checkpoint_path):
         for hk, hv in hf_full_sd.items():
             if hk in hf_used:
                 continue
-            if mv.shape == hv.shape and torch.allclose(mv_cpu, hv.float().cpu(), atol=1e-5):
+            if mv.shape == hv.shape and torch.allclose(
+                mv_cpu, hv.float().cpu(), atol=1e-5
+            ):
                 mapping[mk] = hk
                 hf_used.add(hk)
                 break
@@ -378,7 +395,9 @@ def _load_pruned_checkpoint_into_hf(vision_encoder, pruned_checkpoint_path):
                 f"backbone.layers.{block_idx}.attention.v_proj.{suffix}",
             )
 
-    print(f"  Mapping: {len(mapping)} entries ({sum(1 for v in mapping.values() if isinstance(v, str))} direct + {sum(1 for v in mapping.values() if isinstance(v, tuple))} QKV splits)")
+    print(
+        f"  Mapping: {len(mapping)} entries ({sum(1 for v in mapping.values() if isinstance(v, str))} direct + {sum(1 for v in mapping.values() if isinstance(v, tuple))} QKV splits)"
+    )
     del meta_model, meta_full_sd  # free memory
 
     # Convert pruned weights using the mapping
@@ -396,15 +415,18 @@ def _load_pruned_checkpoint_into_hf(vision_encoder, pruned_checkpoint_path):
             converted[target] = mv
 
     missing, unexpected = vision_encoder.load_state_dict(converted, strict=False)
-    print(f"  Loaded {len(converted)} HF keys ({len(missing)} missing — pruned blocks + RoPE)")
+    print(
+        f"  Loaded {len(converted)} HF keys ({len(missing)} missing — pruned blocks + RoPE)"
+    )
     if unexpected:
         print(f"  WARNING: {len(unexpected)} unexpected keys")
 
     return skip_blocks
 
 
-def export_onnx(output_dir, imgsz=1008, mask_blocks=None, skip_blocks=None,
-                pruned_checkpoint=None):
+def export_onnx(
+    output_dir, imgsz=1008, mask_blocks=None, skip_blocks=None, pruned_checkpoint=None
+):
     """Export HF SAM3 backbone to ONNX via dynamo."""
     from transformers.models.sam3 import Sam3Model
 
@@ -423,7 +445,9 @@ def export_onnx(output_dir, imgsz=1008, mask_blocks=None, skip_blocks=None,
         # Update backbone_feature_sizes for new spatial grid
         P = imgsz // 14
         config.detector_config.vision_config.backbone_feature_sizes = [
-            [P * 4, P * 4], [P * 2, P * 2], [P, P]
+            [P * 4, P * 4],
+            [P * 2, P * 2],
+            [P, P],
         ]
         kwargs["config"] = config
         print(f"  Overriding image_size={imgsz} (spatial={P}x{P})")
@@ -435,7 +459,7 @@ def export_onnx(output_dir, imgsz=1008, mask_blocks=None, skip_blocks=None,
 
     # Load distilled weights from a pruned checkpoint (Meta→HF conversion)
     if pruned_checkpoint:
-        print(f"Loading distilled weights from pruned checkpoint...")
+        print("Loading distilled weights from pruned checkpoint...")
         ckpt_skip = _load_pruned_checkpoint_into_hf(
             model.vision_encoder, pruned_checkpoint
         )
@@ -543,15 +567,18 @@ def build_engine(onnx_path: str, output_path: str):
     with open(output_path, "wb") as f:
         f.write(serialized)
     size_mb = Path(output_path).stat().st_size / 1e6
-    print(f"  Done ({time.perf_counter() - t0:.0f}s), {size_mb:.0f} MB -> {output_path}")
+    print(
+        f"  Done ({time.perf_counter() - t0:.0f}s), {size_mb:.0f} MB -> {output_path}"
+    )
     return output_path
 
 
-def run_pytorch_reference(image_path, imgsz=1008, mask_blocks=None, skip_blocks=None,
-                          pruned_checkpoint=None):
+def run_pytorch_reference(
+    image_path, imgsz=1008, mask_blocks=None, skip_blocks=None, pruned_checkpoint=None
+):
     """Run HF SAM3 vision encoder in PyTorch, return FPN outputs + pixel_values."""
-    from transformers.models.sam3 import Sam3Processor, Sam3Model
     from PIL import Image
+    from transformers.models.sam3 import Sam3Model, Sam3Processor
 
     print("Running PyTorch reference (HF backbone on CUDA)...")
 
@@ -565,7 +592,9 @@ def run_pytorch_reference(image_path, imgsz=1008, mask_blocks=None, skip_blocks=
         config.detector_config.vision_config.backbone_config.image_size = imgsz
         P = imgsz // 14
         config.detector_config.vision_config.backbone_feature_sizes = [
-            [P * 4, P * 4], [P * 2, P * 2], [P, P]
+            [P * 4, P * 4],
+            [P * 2, P * 2],
+            [P, P],
         ]
         kwargs["config"] = config
 
@@ -575,7 +604,7 @@ def run_pytorch_reference(image_path, imgsz=1008, mask_blocks=None, skip_blocks=
 
     # Load distilled weights if provided (must match the TRT engine weights)
     if pruned_checkpoint:
-        print(f"  Loading distilled weights for reference...")
+        print("  Loading distilled weights for reference...")
         ckpt_skip = _load_pruned_checkpoint_into_hf(
             model.vision_encoder, pruned_checkpoint
         )
@@ -597,7 +626,9 @@ def run_pytorch_reference(image_path, imgsz=1008, mask_blocks=None, skip_blocks=
     # Resize if non-default imgsz
     if imgsz != 1008:
         pixel_values = torch.nn.functional.interpolate(
-            pixel_values, size=(imgsz, imgsz), mode="bilinear",
+            pixel_values,
+            size=(imgsz, imgsz),
+            mode="bilinear",
             align_corners=False,
         )
 
@@ -659,7 +690,7 @@ def run_trt_engine(engine_path: str, pixel_values: torch.Tensor):
         shape = engine.get_tensor_shape(name)
         dtype = _trt_to_torch.get(engine.get_tensor_dtype(name), torch.float32)
         mode = engine.get_tensor_mode(name)
-        is_input = (mode == trt.TensorIOMode.INPUT)
+        is_input = mode == trt.TensorIOMode.INPUT
         print(f"  {'INPUT' if is_input else 'OUTPUT'}: {name} {list(shape)} {dtype}")
 
         if is_input:
@@ -712,47 +743,58 @@ def main():
     )
     parser.add_argument("--image", default="x.jpg", help="Test image for validation")
     parser.add_argument(
-        "--output-onnx", default="onnx_hf_backbone/hf_backbone.onnx",
-        help="ONNX output path"
+        "--output-onnx",
+        default="onnx_hf_backbone/hf_backbone.onnx",
+        help="ONNX output path",
     )
     parser.add_argument(
-        "--output-engine", default="hf_backbone_fp16.engine",
-        help="TRT engine output path"
+        "--output-engine",
+        default="hf_backbone_fp16.engine",
+        help="TRT engine output path",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=1008,
-        help="Input resolution (must be divisible by 14)"
+        "--imgsz",
+        type=int,
+        default=1008,
+        help="Input resolution (must be divisible by 14)",
     )
     parser.add_argument(
-        "--mask-blocks", type=str, default=None,
+        "--mask-blocks",
+        type=str,
+        default=None,
         help='Comma-separated "idx:type" pairs for sub-block pruning, '
-             'e.g. "25:attn,28:mlp,27:attn"'
+        'e.g. "25:attn,28:mlp,27:attn"',
     )
-    parser.add_argument(
-        "--skip-export", action="store_true", help="Skip ONNX export"
-    )
+    parser.add_argument("--skip-export", action="store_true", help="Skip ONNX export")
     parser.add_argument(
         "--skip-build", action="store_true", help="Skip TRT engine build"
     )
     parser.add_argument(
-        "--benchmark-only", action="store_true",
-        help="Skip export + build, just benchmark existing engine"
+        "--benchmark-only",
+        action="store_true",
+        help="Skip export + build, just benchmark existing engine",
     )
     parser.add_argument(
-        "--split-block", type=int, default=None,
+        "--split-block",
+        type=int,
+        default=None,
         help="Split backbone at this block index. Exports two engines: "
-             "Part1 (embeddings + blocks[0:K]) and Part2 (blocks[K:] + FPN). "
-             "Use with --output-engine to set Part1 engine name (Part2 gets _part2 suffix).",
+        "Part1 (embeddings + blocks[0:K]) and Part2 (blocks[K:] + FPN). "
+        "Use with --output-engine to set Part1 engine name (Part2 gets _part2 suffix).",
     )
     parser.add_argument(
-        "--skip-blocks", type=str, default=None,
+        "--skip-blocks",
+        type=str,
+        default=None,
         help="Comma-separated block indices to skip entirely, e.g. '5,10,12,14'",
     )
     parser.add_argument(
-        "--pruned-checkpoint", type=str, default=None,
+        "--pruned-checkpoint",
+        type=str,
+        default=None,
         help="Path to pruned checkpoint (.pt) from self-distillation. "
-             "Loads distilled weights (Meta→HF conversion) and auto-applies "
-             "skip_blocks from checkpoint metadata.",
+        "Loads distilled weights (Meta→HF conversion) and auto-applies "
+        "skip_blocks from checkpoint metadata.",
     )
     args = parser.parse_args()
 
@@ -775,7 +817,7 @@ def main():
     # Parse skip_blocks
     skip_blocks = None
     if args.skip_blocks:
-        skip_blocks = set(int(x.strip()) for x in args.skip_blocks.split(","))
+        skip_blocks = {int(x.strip()) for x in args.skip_blocks.split(",")}
         print(f"Block skipping: {len(skip_blocks)} blocks: {sorted(skip_blocks)}")
 
     # --- Split export mode ---
@@ -786,7 +828,10 @@ def main():
         # Step 1: Export two ONNX models
         if not args.skip_export:
             onnx_part1, onnx_part2 = export_split_onnx(
-                onnx_dir, K, imgsz=args.imgsz, mask_blocks=mask_blocks,
+                onnx_dir,
+                K,
+                imgsz=args.imgsz,
+                mask_blocks=mask_blocks,
             )
         else:
             onnx_part1 = str(Path(onnx_dir) / "hf_backbone_part1.onnx")
@@ -805,7 +850,9 @@ def main():
 
         # Step 3: Benchmark both parts
         pixel_values, ref_fpn, pytorch_ms = run_pytorch_reference(
-            args.image, imgsz=args.imgsz, mask_blocks=mask_blocks,
+            args.image,
+            imgsz=args.imgsz,
+            mask_blocks=mask_blocks,
         )
 
         print(f"\nBenchmarking Part1 engine: {engine_part1}")
@@ -813,14 +860,16 @@ def main():
 
         # Part2 input is Part1 output (the intermediate hidden states)
         # Part1 output is a single tensor [B, H, W, D] (BHWD channels-last)
-        intermediate = part1_out[0]  # run_trt_engine returns list sorted by spatial size
+        intermediate = part1_out[
+            0
+        ]  # run_trt_engine returns list sorted by spatial size
         print(f"\nBenchmarking Part2 engine: {engine_part2}")
         part2_out, part2_ms = run_trt_engine(engine_part2, intermediate)
 
         # Compare split pipeline vs PyTorch reference
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"SPLIT BACKBONE (split_block={K})")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         for i in range(min(3, len(part2_out))):
             ref = ref_fpn[i]
             trt_out = part2_out[i]
@@ -831,13 +880,13 @@ def main():
             print(f"    Cosine: {cos:.6f}  MaxDiff: {max_diff:.4f}  {status}")
 
         total_ms = part1_ms + part2_ms
-        print(f"\n  Part1 (blocks 0..{K-1}):  {part1_ms:.1f}ms  -> {engine_part1}")
+        print(f"\n  Part1 (blocks 0..{K - 1}):  {part1_ms:.1f}ms  -> {engine_part1}")
         print(f"  Part2 (blocks {K}..31+FPN): {part2_ms:.1f}ms  -> {engine_part2}")
         print(f"  Total (sequential):     {total_ms:.1f}ms")
         print(f"  PyTorch backbone:       {pytorch_ms:.1f}ms")
         if mask_blocks:
             print(f"  Block masking: {len(mask_blocks)} blocks pruned")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         return
 
     # --- Full backbone export (original path) ---
@@ -846,9 +895,13 @@ def main():
 
     # Step 1: Export ONNX
     if not args.skip_export:
-        onnx_path = export_onnx(onnx_dir, imgsz=args.imgsz,
-                                mask_blocks=mask_blocks, skip_blocks=skip_blocks,
-                                pruned_checkpoint=args.pruned_checkpoint)
+        onnx_path = export_onnx(
+            onnx_dir,
+            imgsz=args.imgsz,
+            mask_blocks=mask_blocks,
+            skip_blocks=skip_blocks,
+            pruned_checkpoint=args.pruned_checkpoint,
+        )
     else:
         print(f"Skipping ONNX export, using: {onnx_path}")
 
@@ -860,17 +913,20 @@ def main():
 
     # Step 3: PyTorch reference
     pixel_values, ref_fpn, pytorch_ms = run_pytorch_reference(
-        args.image, imgsz=args.imgsz, mask_blocks=mask_blocks,
-        skip_blocks=skip_blocks, pruned_checkpoint=args.pruned_checkpoint,
+        args.image,
+        imgsz=args.imgsz,
+        mask_blocks=mask_blocks,
+        skip_blocks=skip_blocks,
+        pruned_checkpoint=args.pruned_checkpoint,
     )
 
     # Step 4: TRT inference
     trt_fpn, trt_ms = run_trt_engine(args.output_engine, pixel_values)
 
     # Step 5: Compare — match by index (both sorted largest-first)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("QUALITY COMPARISON: HF Backbone FPN (TRT FP16 vs PyTorch)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for i in range(min(3, len(trt_fpn))):
         ref = ref_fpn[i]
         trt_out = trt_fpn[i]
@@ -886,7 +942,7 @@ def main():
     print(f"  PyTorch backbone:  {pytorch_ms:.1f}ms")
     print(f"  TRT FP16 backbone: {trt_ms:.1f}ms")
     print(f"  Speedup: {pytorch_ms / trt_ms:.1f}x")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

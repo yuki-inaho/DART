@@ -167,7 +167,7 @@ class YtVideoPrep:
         ]
 
         result = subprocess.run(
-            ["ffmpeg"] + args,
+            ["ffmpeg", *args],
             timeout=self.ffmpeg_timeout,
             capture_output=True,
             text=True,

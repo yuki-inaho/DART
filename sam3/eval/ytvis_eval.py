@@ -6,25 +6,27 @@ import gc
 import logging
 import os
 from collections import defaultdict
-from operator import xor
+from operator import iadd, xor
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 import pycocotools.mask as mask_util
 import torch
 from pycocotools.cocoeval import COCOeval
+from typing_extensions import override
+
 from sam3.eval.cgf1_eval import CGF1Eval
 from sam3.eval.coco_eval_offline import convert_to_xywh
 from sam3.model.box_ops import box_xywh_inter_union
 from sam3.train.masks_ops import rle_encode
 from sam3.train.utils import distributed as dist
-from typing_extensions import override
 
 try:
     import rapidjson as json
 except ModuleNotFoundError:
     import json
+
+import functools
 
 from iopath.common.file_io import g_pathmgr
 
@@ -53,7 +55,7 @@ class YTVISevalMixin:
 
         # set ignore flag
         for gt in gts:
-            gt["ignore"] = gt["ignore"] if "ignore" in gt else 0
+            gt["ignore"] = gt.get("ignore", 0)
             gt["ignore"] = "iscrowd" in gt and gt["iscrowd"]
             if p.iouType == "keypoints":
                 gt["ignore"] = (gt["num_keypoints"] == 0) or gt["ignore"]
@@ -168,7 +170,7 @@ class YTVISResultsWriter:
         dump_file: str,
         postprocessor,
         gather_pred_via_filesys=False,
-        pred_file_evaluators: Optional[List] = None,
+        pred_file_evaluators: list | None = None,
         save_per_frame_scores: bool = False,
         write_eval_metrics_file: bool = True,
         eval_metrics_file_suffix: str = ".sam3_eval_metrics",
@@ -360,7 +362,7 @@ class YTVISResultsWriter:
             f"skipped {len(duplication_keys)} duplicated predictions in YTVISResultsWriter "
             f"with the following (video_id, category_id) tuples: {duplication_keys}"
         )
-        dedup_predictions = sum(dedup_prediction_dict.values(), [])
+        dedup_predictions = functools.reduce(iadd, dedup_prediction_dict.values(), [])
         return dedup_predictions
 
     def compute_synced(

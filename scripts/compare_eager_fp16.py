@@ -2,8 +2,8 @@
 """Minimal TRT FP16 vs PyTorch backbone comparison (no ORT dependency)."""
 
 import argparse
+
 import torch
-import numpy as np
 from PIL import Image
 from torchvision.transforms import v2
 
@@ -41,12 +41,14 @@ def main():
     )
 
     # Prepare input
-    transform = v2.Compose([
-        v2.ToDtype(torch.uint8, scale=True),
-        v2.Resize(size=(args.imgsz, args.imgsz)),
-        v2.ToDtype(torch.float32, scale=True),
-        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ])
+    transform = v2.Compose(
+        [
+            v2.ToDtype(torch.uint8, scale=True),
+            v2.Resize(size=(args.imgsz, args.imgsz)),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
 
     if args.image:
         print(f"Loading image: {args.image}")
@@ -57,7 +59,9 @@ def main():
     else:
         tensor = torch.randn(1, 3, args.imgsz, args.imgsz, device=device)
 
-    print(f"Input: {tensor.shape}, range=[{tensor.min().item():.3f}, {tensor.max().item():.3f}]")
+    print(
+        f"Input: {tensor.shape}, range=[{tensor.min().item():.3f}, {tensor.max().item():.3f}]"
+    )
 
     # Run PyTorch
     print("\nRunning PyTorch backbone...")
@@ -80,10 +84,12 @@ def main():
         cos = torch.nn.functional.cosine_similarity(
             pt_f.flatten().unsqueeze(0), trt_f.flatten().unsqueeze(0)
         )
-        print(f"  FPN[{i}]: cosine={cos.item():.6f}, "
-              f"max_diff={diff.max().item():.4f}, "
-              f"mean_diff={diff.mean().item():.6f}, "
-              f"pt_std={pt_f.std().item():.4f}, trt_std={trt_f.std().item():.4f}")
+        print(
+            f"  FPN[{i}]: cosine={cos.item():.6f}, "
+            f"max_diff={diff.max().item():.4f}, "
+            f"mean_diff={diff.mean().item():.6f}, "
+            f"pt_std={pt_f.std().item():.4f}, trt_std={trt_f.std().item():.4f}"
+        )
 
     # Final verdict
     cos_last = torch.nn.functional.cosine_similarity(

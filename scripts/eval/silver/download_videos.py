@@ -4,10 +4,9 @@
 import ast
 import concurrent.futures
 import os
-import shutil
 import subprocess
 import sys
-from concurrent.futures import as_completed, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import yt_dlp
@@ -16,7 +15,6 @@ from utils import (
     config,
     load_json,
     run_command,
-    save_json,
     update_annotations,
 )
 

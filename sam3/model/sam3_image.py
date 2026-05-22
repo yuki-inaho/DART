@@ -4,10 +4,10 @@
 
 import os
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+
 from sam3.model.model_misc import SAM3Output
 from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 from sam3.model.vl_combiner import SAM3VLBackbone
@@ -214,7 +214,7 @@ class Sam3Image(torch.nn.Module):
         find_input,
         prompt,
         prompt_mask,
-        encoder_extra_kwargs: Optional[Dict] = None,
+        encoder_extra_kwargs: dict | None = None,
     ):
         feat_tuple = self._get_img_feats(backbone_out, find_input.img_ids)
         backbone_out, img_feats, img_pos_embeds, vis_feat_sizes = feat_tuple
@@ -489,7 +489,7 @@ class Sam3Image(torch.nn.Module):
             self._compute_matching(out, self.back_convert(find_target))
         return out
 
-    def _postprocess_out(self, out: Dict, multimask_output: bool = False):
+    def _postprocess_out(self, out: dict, multimask_output: bool = False):
         # For multimask output, during eval we return the single best mask with the dict keys expected by the evaluators, but also return the multimasks output with new keys.
         num_mask_boxes = out["pred_boxes"].size(1)
         if not self.training and multimask_output and num_mask_boxes > 1:
@@ -597,7 +597,7 @@ class Sam3Image(torch.nn.Module):
         self,
         inference_state,
         **kwargs,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         orig_h, orig_w = (
             inference_state["original_height"],
             inference_state["original_width"],
@@ -637,7 +637,7 @@ class Sam3Image(torch.nn.Module):
         inference_state,
         *args,
         **kwargs,
-    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+    ) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
         backbone_out = inference_state["backbone_out"]["sam2_backbone_out"]
         (
             _,

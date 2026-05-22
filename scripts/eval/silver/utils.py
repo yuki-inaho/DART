@@ -5,17 +5,12 @@ import json
 import os
 import shutil
 import subprocess
-from io import BytesIO
 from pathlib import Path
 
 import cv2
-import matplotlib.pyplot as plt
-import numpy as np
 import yaml
 from PIL import Image
-from pycocotools import mask as mask_utils
 from tqdm import tqdm
-
 
 annotation_files = {
     "droid": [
@@ -60,7 +55,7 @@ config = load_yaml("CONFIG_FRAMES.yaml")
 
 def is_valid_image(img_path):
     try:
-        img = Image.open(img_path).convert("RGB")
+        Image.open(img_path).convert("RGB")
         return True
     except Exception:
         return False

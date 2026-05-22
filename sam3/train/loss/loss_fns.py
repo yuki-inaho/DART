@@ -9,20 +9,20 @@ import torch
 import torch.distributed
 import torch.nn.functional as F
 import torchmetrics
+from torch import nn
+
 from sam3.model import box_ops
 from sam3.model.data_misc import interpolate
 from sam3.train.loss.sigmoid_focal_loss import (
     triton_sigmoid_focal_loss,
     triton_sigmoid_focal_loss_reduce,
 )
-from torch import nn
 
 from .mask_sampling import (
     calculate_uncertainty,
     get_uncertain_point_coords_with_randomness,
     point_sample,
 )
-
 
 CORE_LOSS_KEY = "core_loss"
 
@@ -584,7 +584,7 @@ class Masks(LossWithWeights):
     ):
         super().__init__(weight_dict, compute_aux)
         if compute_aux:
-            warnings.warn("Masks loss usually shouldn't be applied to aux outputs")
+            warnings.warn("Masks loss usually shouldn't be applied to aux outputs", stacklevel=2)
         self.focal_alpha = focal_alpha
         self.focal_gamma = focal_gamma
         self.num_sample_points = num_sample_points

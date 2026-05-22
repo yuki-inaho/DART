@@ -236,7 +236,7 @@ def visualize_formatted_frame_output(
         # This is a single outputs dict with frame indices as keys
         outputs_list = [outputs_list]
     elif isinstance(outputs_list, dict) and not any(
-        isinstance(k, int) for k in outputs_list.keys()
+        isinstance(k, int) for k in outputs_list
     ):
         # This is a single frame's outputs {obj_id: mask}
         single_frame_outputs = {frame_idx: outputs_list}
@@ -752,7 +752,7 @@ def visualize_prompt_overlay(
 ):
     """Simple prompt visualization function"""
     img = Image.fromarray(load_frame(video_frames[frame_idx]))
-    fig, ax = plt.subplots(1, figsize=(6, 4))
+    _fig, ax = plt.subplots(1, figsize=(6, 4))
     ax.imshow(img)
 
     img_w, img_h = img.size
@@ -766,7 +766,7 @@ def visualize_prompt_overlay(
             fontsize=12,
             color="white",
             weight="bold",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="red", alpha=0.7),
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": "red", "alpha": 0.7},
             verticalalignment="top",
         )
 
@@ -800,7 +800,7 @@ def visualize_prompt_overlay(
                 color=color,
                 fontsize=10,
                 weight="bold",
-                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8),
+                bbox={"boxstyle": "round,pad=0.2", "facecolor": "white", "alpha": 0.8},
             )
 
     if bounding_boxes:
@@ -832,7 +832,7 @@ def visualize_prompt_overlay(
                 color=color,
                 fontsize=10,
                 weight="bold",
-                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8),
+                bbox={"boxstyle": "round,pad=0.2", "facecolor": "white", "alpha": 0.8},
             )
 
     # Add object ID info if provided
@@ -845,7 +845,7 @@ def visualize_prompt_overlay(
             fontsize=10,
             color="white",
             weight="bold",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="blue", alpha=0.7),
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": "blue", "alpha": 0.7},
             verticalalignment="bottom",
         )
 

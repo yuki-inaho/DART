@@ -10,7 +10,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
 
 PYTHON = r"C:\Users\mehme\anaconda3\envs\sam3\python.exe"
@@ -19,30 +18,46 @@ PYTHON = r"C:\Users\mehme\anaconda3\envs\sam3\python.exe"
 BACKBONES = [
     {"name": "efficientvit_l1", "engine": "student_efficientvit_l1_fp16.engine"},
     {"name": "efficientvit_l2", "engine": "student_efficientvit_l2_fp16.engine"},
-    {"name": "repvit_m2_3",     "engine": "student_repvit_m2_3_fp16.engine"},
-    {"name": "tiny_vit_21m",    "engine": "student_tiny_vit_21m_fp16.engine"},
-    {"name": "vit_h_teacher",   "engine": "hf_backbone_1008_fp16.engine"},
+    {"name": "repvit_m2_3", "engine": "student_repvit_m2_3_fp16.engine"},
+    {"name": "tiny_vit_21m", "engine": "student_tiny_vit_21m_fp16.engine"},
+    {"name": "vit_h_teacher", "engine": "hf_backbone_1008_fp16.engine"},
 ]
 
 # ── Class configurations ───────────────────────────────────────────────
 # Pick diverse COCO classes so text embeddings are distinct
 CLASS_LISTS = {
-    1:  ["person"],
-    2:  ["person", "car"],
-    4:  ["person", "car", "dog", "bicycle"],
-    8:  ["person", "car", "dog", "bicycle", "chair", "bottle", "laptop", "cat"],
-    16: ["person", "car", "dog", "bicycle", "chair", "bottle", "laptop", "cat",
-         "bus", "train", "airplane", "boat", "backpack", "umbrella", "handbag", "skateboard"],
+    1: ["person"],
+    2: ["person", "car"],
+    4: ["person", "car", "dog", "bicycle"],
+    8: ["person", "car", "dog", "bicycle", "chair", "bottle", "laptop", "cat"],
+    16: [
+        "person",
+        "car",
+        "dog",
+        "bicycle",
+        "chair",
+        "bottle",
+        "laptop",
+        "cat",
+        "bus",
+        "train",
+        "airplane",
+        "boat",
+        "backpack",
+        "umbrella",
+        "handbag",
+        "skateboard",
+    ],
 }
 
 # ── Enc-dec engines for each class count ───────────────────────────────
 # max_classes must be >= num_classes; single pass when num_classes <= max_classes
 ENC_DEC_CONFIG = {
-    1:  {"engine": "enc_dec_1class_fp16.engine",        "max_classes": 1},
-    2:  {"engine": "enc_dec_2class_fp16.engine",        "max_classes": 2},
-    4:  {"engine": "enc_dec_4class_fp16.engine",        "max_classes": 4},
-    8:  {"engine": "enc_dec_1008_c16_fp16_16.engine",   "max_classes": 16},
-    16: {"engine": "enc_dec_1008_c16_fp16_16.engine",   "max_classes": 16},
+    1: {"engine": "enc_dec_1class_fp16.engine", "max_classes": 1},
+    2: {"engine": "enc_dec_2class_fp16.engine", "max_classes": 2},
+    4: {"engine": "enc_dec_4class_fp16.engine", "max_classes": 4},
+    8: {"engine": "enc_dec_1008_c16_fp16_16.engine", "max_classes": 16},
+    16: {"engine": "enc_dec_1008_c16_fp16_16.engine", "max_classes": 16},
 }
 
 
@@ -106,16 +121,26 @@ def run_one(backbone: dict, n_classes: int) -> dict:
     classes = CLASS_LISTS[n_classes]
 
     cmd = [
-        PYTHON, "scripts/benchmark_video.py",
-        "--video", "input.mp4",
-        "--classes", *classes,
-        "--checkpoint", "sam3.pt",
-        "--trt", backbone["engine"],
-        "--trt-enc-dec", enc_dec["engine"],
-        "--trt-max-classes", str(enc_dec["max_classes"]),
-        "--imgsz", "1008",
-        "--max-frames", "100",
-        "--mode", "both",
+        PYTHON,
+        "scripts/benchmark_video.py",
+        "--video",
+        "input.mp4",
+        "--classes",
+        *classes,
+        "--checkpoint",
+        "sam3.pt",
+        "--trt",
+        backbone["engine"],
+        "--trt-enc-dec",
+        enc_dec["engine"],
+        "--trt-max-classes",
+        str(enc_dec["max_classes"]),
+        "--imgsz",
+        "1008",
+        "--max-frames",
+        "100",
+        "--mode",
+        "both",
     ]
 
     env = os.environ.copy()
@@ -143,16 +168,26 @@ def warmup_gpu():
     print("Warming up GPU (throwaway run)...")
     enc_dec = ENC_DEC_CONFIG[1]
     cmd = [
-        PYTHON, "scripts/benchmark_video.py",
-        "--video", "input.mp4",
-        "--classes", "person",
-        "--checkpoint", "sam3.pt",
-        "--trt", BACKBONES[0]["engine"],
-        "--trt-enc-dec", enc_dec["engine"],
-        "--trt-max-classes", str(enc_dec["max_classes"]),
-        "--imgsz", "1008",
-        "--max-frames", "20",
-        "--mode", "sequential",
+        PYTHON,
+        "scripts/benchmark_video.py",
+        "--video",
+        "input.mp4",
+        "--classes",
+        "person",
+        "--checkpoint",
+        "sam3.pt",
+        "--trt",
+        BACKBONES[0]["engine"],
+        "--trt-enc-dec",
+        enc_dec["engine"],
+        "--trt-max-classes",
+        str(enc_dec["max_classes"]),
+        "--imgsz",
+        "1008",
+        "--max-frames",
+        "20",
+        "--mode",
+        "sequential",
     ]
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -171,9 +206,9 @@ def main():
         for n_classes in sorted(CLASS_LISTS.keys()):
             idx += 1
             tag = f"[{idx}/{total}] {bb['name']} × {n_classes} classes"
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print(f"  {tag}")
-            print(f"{'='*70}")
+            print(f"{'=' * 70}")
 
             metrics = run_one(bb, n_classes)
             all_results.append(metrics)
@@ -184,8 +219,10 @@ def main():
             pipe_ms = metrics.get("pipe_total_ms", 0)
             pipe_fps = metrics.get("pipe_fps", 0)
             err = " [ERROR]" if metrics.get("error") else ""
-            print(f"  BB={bb_ms:.1f}ms  Seq={seq_ms:.1f}ms({seq_fps:.1f}FPS)  "
-                  f"Pipe={pipe_ms:.1f}ms({pipe_fps:.1f}FPS){err}")
+            print(
+                f"  BB={bb_ms:.1f}ms  Seq={seq_ms:.1f}ms({seq_fps:.1f}FPS)  "
+                f"Pipe={pipe_ms:.1f}ms({pipe_fps:.1f}FPS){err}"
+            )
 
             if metrics.get("error"):
                 print(f"  stderr: {metrics.get('stderr_tail', '')[:300]}")
@@ -204,14 +241,14 @@ def main():
     bb_names = [b["name"] for b in BACKBONES]
 
     def print_table(title, key):
-        print(f"\n{'='*90}")
+        print(f"\n{'=' * 90}")
         print(title)
-        print(f"{'='*90}")
+        print(f"{'=' * 90}")
         header = f"  {'Backbone':<20s}"
         for nc in class_counts:
             header += f"  {nc:>2d}cls"
         print(header)
-        print(f"  {'-'*80}")
+        print(f"  {'-' * 80}")
         for bb_name in bb_names:
             row = f"  {bb_name:<20s}"
             for nc in class_counts:
@@ -219,7 +256,7 @@ def main():
                 val = m.get(key, 0)
                 row += f"  {val:>8.1f}"
             print(row)
-        print(f"{'='*90}")
+        print(f"{'=' * 90}")
 
     print_table("SEQUENTIAL — ms/frame (1008px, 100 frames)", "seq_total_ms")
     print_table("SEQUENTIAL — FPS", "seq_fps")

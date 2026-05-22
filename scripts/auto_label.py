@@ -102,7 +102,8 @@ def find_images(path):
             sys.exit(1)
     elif p.is_dir():
         images = sorted(
-            f for f in p.iterdir()
+            f
+            for f in p.iterdir()
             if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
         )
         if not images:
@@ -138,20 +139,25 @@ def build_backbone_engine(checkpoint_path, imgsz):
     if os.path.exists(engine_path):
         return engine_path
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Backbone TRT engine not found: {engine_path}")
-    print(f"  Building automatically (one-time, takes ~5 min)...")
-    print(f"{'='*60}\n")
+    print("  Building automatically (one-time, takes ~5 min)...")
+    print(f"{'=' * 60}\n")
 
     # Step 1: Export ONNX via HF path
     if not os.path.exists(onnx_path):
         print("Step 1/2: Exporting backbone to ONNX...")
         cmd = [
-            sys.executable, "scripts/export_hf_backbone.py",
-            "--image", "x.jpg",
-            "--imgsz", str(imgsz),
-            "--output-onnx", onnx_path,
-            "--output-engine", engine_path,
+            sys.executable,
+            "scripts/export_hf_backbone.py",
+            "--image",
+            "x.jpg",
+            "--imgsz",
+            str(imgsz),
+            "--output-onnx",
+            onnx_path,
+            "--output-engine",
+            engine_path,
         ]
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
@@ -159,8 +165,10 @@ def build_backbone_engine(checkpoint_path, imgsz):
         if result.returncode != 0:
             print("\nERROR: Backbone export failed.")
             print("  Try running manually:")
-            print(f"  PYTHONIOENCODING=utf-8 python scripts/export_hf_backbone.py "
-                  f"--image x.jpg --imgsz {imgsz}")
+            print(
+                f"  PYTHONIOENCODING=utf-8 python scripts/export_hf_backbone.py "
+                f"--image x.jpg --imgsz {imgsz}"
+            )
             sys.exit(1)
         if os.path.exists(engine_path):
             return engine_path
@@ -168,10 +176,16 @@ def build_backbone_engine(checkpoint_path, imgsz):
     # Step 2: Build TRT engine from ONNX
     print("Step 2/2: Building TRT FP16 engine from ONNX...")
     cmd = [
-        sys.executable, "-m", "sam3.trt.build_engine",
-        "--onnx", onnx_path,
-        "--output", engine_path,
-        "--fp16", "--mixed-precision", "none",
+        sys.executable,
+        "-m",
+        "sam3.trt.build_engine",
+        "--onnx",
+        onnx_path,
+        "--output",
+        engine_path,
+        "--fp16",
+        "--mixed-precision",
+        "none",
     ]
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -182,8 +196,10 @@ def build_backbone_engine(checkpoint_path, imgsz):
         print("  - TensorRT not installed (pip install tensorrt)")
         print("  - Insufficient GPU memory (need ~4GB free)")
         print("  Try running manually:")
-        print(f"  python -m sam3.trt.build_engine --onnx {onnx_path} "
-              f"--output {engine_path} --fp16 --mixed-precision none")
+        print(
+            f"  python -m sam3.trt.build_engine --onnx {onnx_path} "
+            f"--output {engine_path} --fp16 --mixed-precision none"
+        )
         sys.exit(1)
 
     if not os.path.exists(engine_path):
@@ -202,20 +218,26 @@ def build_enc_dec_engine(checkpoint_path, imgsz, max_classes=16):
     if os.path.exists(engine_path):
         return engine_path
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Enc-dec TRT engine not found: {engine_path}")
-    print(f"  Building automatically (one-time, takes ~3 min)...")
-    print(f"{'='*60}\n")
+    print("  Building automatically (one-time, takes ~3 min)...")
+    print(f"{'=' * 60}\n")
 
     # Step 1: Export ONNX
     if not os.path.exists(onnx_path):
         print("Step 1/2: Exporting encoder-decoder to ONNX...")
         cmd = [
-            sys.executable, "-m", "sam3.trt.export_enc_dec",
-            "--checkpoint", checkpoint_path,
-            "--output", onnx_path,
-            "--max-classes", str(max_classes),
-            "--imgsz", str(imgsz),
+            sys.executable,
+            "-m",
+            "sam3.trt.export_enc_dec",
+            "--checkpoint",
+            checkpoint_path,
+            "--output",
+            onnx_path,
+            "--max-classes",
+            str(max_classes),
+            "--imgsz",
+            str(imgsz),
             "--presence",
         ]
         env = os.environ.copy()
@@ -224,18 +246,26 @@ def build_enc_dec_engine(checkpoint_path, imgsz, max_classes=16):
         if result.returncode != 0:
             print("\nERROR: Encoder-decoder ONNX export failed.")
             print("  Try running manually:")
-            print(f"  PYTHONIOENCODING=utf-8 python -m sam3.trt.export_enc_dec "
-                  f"--checkpoint {checkpoint_path} --output {onnx_path} "
-                  f"--max-classes {max_classes} --imgsz {imgsz} --presence")
+            print(
+                f"  PYTHONIOENCODING=utf-8 python -m sam3.trt.export_enc_dec "
+                f"--checkpoint {checkpoint_path} --output {onnx_path} "
+                f"--max-classes {max_classes} --imgsz {imgsz} --presence"
+            )
             sys.exit(1)
 
     # Step 2: Build TRT engine
     print("Step 2/2: Building TRT FP16 engine from ONNX...")
     cmd = [
-        sys.executable, "-m", "sam3.trt.build_engine",
-        "--onnx", onnx_path,
-        "--output", engine_path,
-        "--fp16", "--mixed-precision", "none",
+        sys.executable,
+        "-m",
+        "sam3.trt.build_engine",
+        "--onnx",
+        onnx_path,
+        "--output",
+        engine_path,
+        "--fp16",
+        "--mixed-precision",
+        "none",
     ]
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -247,8 +277,10 @@ def build_enc_dec_engine(checkpoint_path, imgsz, max_classes=16):
         print("  - Insufficient GPU memory (16-class engine needs ~8GB free)")
         print("  - Try reducing --max-classes to 4 or 8")
         print("  Manual command:")
-        print(f"  python -m sam3.trt.build_engine --onnx {onnx_path} "
-              f"--output {engine_path} --fp16 --mixed-precision none")
+        print(
+            f"  python -m sam3.trt.build_engine --onnx {onnx_path} "
+            f"--output {engine_path} --fp16 --mixed-precision none"
+        )
         sys.exit(1)
 
     if not os.path.exists(engine_path):
@@ -302,8 +334,8 @@ def apply_merge_nms(results, merge_groups, nms_threshold):
     For each merge group, run NMS on the union of all detections from those
     classes. Detections from classes not in any group are kept as-is.
     """
-    boxes = results["boxes"]       # (N, 4) xyxy
-    scores = results["scores"]     # (N,)
+    boxes = results["boxes"]  # (N, 4) xyxy
+    scores = results["scores"]  # (N,)
     class_ids = results["class_ids"]  # (N,)
     class_names = results["class_names"]  # list of N strings
 
@@ -322,7 +354,8 @@ def apply_merge_nms(results, merge_groups, nms_threshold):
         # Select detections belonging to this group
         in_group = torch.tensor(
             [int(class_ids[i].item()) in group for i in range(len(class_ids))],
-            dtype=torch.bool, device=scores.device,
+            dtype=torch.bool,
+            device=scores.device,
         )
         if in_group.sum() < 2:
             continue
@@ -333,7 +366,9 @@ def apply_merge_nms(results, merge_groups, nms_threshold):
 
         # Run class-agnostic NMS within this group
         nms_keep = torchvision_nms(group_boxes, group_scores, nms_threshold)
-        suppressed = torch.ones(len(group_indices), dtype=torch.bool, device=scores.device)
+        suppressed = torch.ones(
+            len(group_indices), dtype=torch.bool, device=scores.device
+        )
         suppressed[nms_keep] = False
         # Mark suppressed detections
         keep_mask[group_indices[suppressed]] = False
@@ -392,15 +427,17 @@ def results_to_coco_anns(results, image_id, ann_id_start):
         x1, y1, x2, y2 = boxes[i].cpu().tolist()
         w = x2 - x1
         h = y2 - y1
-        anns.append({
-            "id": ann_id_start + i,
-            "image_id": image_id,
-            "category_id": int(class_ids[i].item()),
-            "bbox": [round(x1, 2), round(y1, 2), round(w, 2), round(h, 2)],
-            "area": round(w * h, 2),
-            "score": round(float(scores[i].item()), 4),
-            "iscrowd": 0,
-        })
+        anns.append(
+            {
+                "id": ann_id_start + i,
+                "image_id": image_id,
+                "category_id": int(class_ids[i].item()),
+                "bbox": [round(x1, 2), round(y1, 2), round(w, 2), round(h, 2)],
+                "area": round(w * h, 2),
+                "score": round(float(scores[i].item()), 4),
+                "iscrowd": 0,
+            }
+        )
 
     return anns, ann_id_start + len(scores)
 
@@ -428,14 +465,14 @@ def run_labeling(args):
             backbone_engine = build_backbone_engine(args.checkpoint, args.imgsz)
         elif not os.path.exists(backbone_engine):
             print(f"ERROR: Backbone engine not found: {backbone_engine}")
-            print(f"  Remove --trt-backbone to auto-build, or provide a valid path.")
+            print("  Remove --trt-backbone to auto-build, or provide a valid path.")
             sys.exit(1)
 
         if enc_dec_engine is None:
             enc_dec_engine = build_enc_dec_engine(args.checkpoint, args.imgsz)
         elif not os.path.exists(enc_dec_engine):
             print(f"ERROR: Enc-dec engine not found: {enc_dec_engine}")
-            print(f"  Remove --trt-enc-dec to auto-build, or provide a valid path.")
+            print("  Remove --trt-enc-dec to auto-build, or provide a valid path.")
             sys.exit(1)
 
     # Parse merge groups
@@ -451,13 +488,18 @@ def run_labeling(args):
     # Load model
     print(f"\nLoading SAM3 model from {args.checkpoint} ...")
     from sam3.model_builder import build_sam3_image_model
+
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
 
     from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device,
+        model,
+        device=device,
         resolution=args.imgsz,
         trt_engine_path=backbone_engine if use_trt else None,
         use_fp16=use_trt,
@@ -532,12 +574,14 @@ def run_labeling(args):
 
         if is_coco:
             image_id = idx + 1
-            coco_images.append({
-                "id": image_id,
-                "file_name": img_path.name,
-                "width": img_w,
-                "height": img_h,
-            })
+            coco_images.append(
+                {
+                    "id": image_id,
+                    "file_name": img_path.name,
+                    "width": img_w,
+                    "height": img_h,
+                }
+            )
             anns, ann_id = results_to_coco_anns(results, image_id, ann_id)
             coco_annotations.extend(anns)
         else:
@@ -548,17 +592,17 @@ def run_labeling(args):
         if (idx + 1) % 50 == 0 or idx == 0 or idx == len(images) - 1:
             elapsed = time.perf_counter() - t_start
             fps = (idx + 1) / elapsed if elapsed > 0 else 0
-            print(f"  [{idx+1}/{len(images)}] {img_path.name}: "
-                  f"{n_dets} dets, {fps:.1f} img/s")
+            print(
+                f"  [{idx + 1}/{len(images)}] {img_path.name}: "
+                f"{n_dets} dets, {fps:.1f} img/s"
+            )
 
     # Save COCO JSON
     if is_coco:
         coco_output = {
             "images": coco_images,
             "annotations": coco_annotations,
-            "categories": [
-                {"id": i, "name": name} for i, name in enumerate(classes)
-            ],
+            "categories": [{"id": i, "name": name} for i, name in enumerate(classes)],
         }
         coco_path = output_dir / "annotations.json"
         with open(coco_path, "w") as f:
@@ -613,59 +657,85 @@ Output (COCO):
         """,
     )
     parser.add_argument(
-        "--images-dir", required=True,
+        "--images-dir",
+        required=True,
         help="Path to directory of images, or a single image file",
     )
     parser.add_argument(
-        "--classes", nargs="+", required=True,
+        "--classes",
+        nargs="+",
+        required=True,
         help="Class names to detect (e.g. --classes person car bicycle)",
     )
     parser.add_argument(
-        "--checkpoint", type=str, default=None,
+        "--checkpoint",
+        type=str,
+        default=None,
         help="SAM3 checkpoint path (default: auto-download sam3.pt)",
     )
     parser.add_argument(
-        "--output-dir", "-o", type=str, default=None,
+        "--output-dir",
+        "-o",
+        type=str,
+        default=None,
         help="Output directory for labels (default: labels/ next to images)",
     )
     parser.add_argument(
-        "--format", type=str, default="yolo", choices=["yolo", "coco"],
+        "--format",
+        type=str,
+        default="yolo",
+        choices=["yolo", "coco"],
         help="Label format: yolo (per-image .txt) or coco (single .json)",
     )
     parser.add_argument(
-        "--confidence", type=float, default=0.3,
+        "--confidence",
+        type=float,
+        default=0.3,
         help="Confidence threshold (default: 0.3)",
     )
     parser.add_argument(
-        "--nms", type=float, default=0.7,
+        "--nms",
+        type=float,
+        default=0.7,
         help="Per-class NMS IoU threshold (default: 0.7)",
     )
     parser.add_argument(
-        "--merge-nms", type=str, default=None, metavar="GROUPS",
+        "--merge-nms",
+        type=str,
+        default=None,
+        metavar="GROUPS",
         help='Cross-class NMS groups. Use "all" for fully class-agnostic, '
-             'or semicolon-separated groups: "car,truck,bus;cat,dog"',
+        'or semicolon-separated groups: "car,truck,bus;cat,dog"',
     )
     parser.add_argument(
-        "--merge-nms-thresh", type=float, default=0.5,
+        "--merge-nms-thresh",
+        type=float,
+        default=0.5,
         help="IoU threshold for cross-class merge NMS (default: 0.5)",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=1008,
+        "--imgsz",
+        type=int,
+        default=1008,
         help="Input resolution, must be divisible by 14 (default: 1008)",
     )
     parser.add_argument(
-        "--trt-backbone", type=str, default=None,
+        "--trt-backbone",
+        type=str,
+        default=None,
         help="Path to pre-built backbone TRT engine (auto-built if omitted)",
     )
     parser.add_argument(
-        "--trt-enc-dec", type=str, default=None,
+        "--trt-enc-dec",
+        type=str,
+        default=None,
         help="Path to pre-built enc-dec TRT engine (auto-built if omitted)",
     )
     args = parser.parse_args()
 
     if args.imgsz % 14 != 0:
         print(f"ERROR: --imgsz must be divisible by 14, got {args.imgsz}")
-        print(f"  Common values: 644, 868, 1008")
+        print("  Common values: 644, 868, 1008")
         sys.exit(1)
 
     if not args.classes:

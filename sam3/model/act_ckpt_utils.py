@@ -3,8 +3,9 @@
 # pyre-unsafe
 
 import inspect
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar, Union
+from typing import TypeVar
 
 import torch
 import torch.nn as nn
@@ -16,7 +17,7 @@ T = TypeVar("T")
 Module = TypeVar("Module", bound=nn.Module)
 
 
-def activation_ckpt_wrapper(module: Union[nn.Module, Callable]) -> Callable:
+def activation_ckpt_wrapper(module: nn.Module | Callable) -> Callable:
     """
     Wraps a given module to enable or disable activation checkpointing.
 
@@ -62,7 +63,7 @@ def activation_ckpt_wrapper(module: Union[nn.Module, Callable]) -> Callable:
                 name: param.default for name, param in sig.parameters.items()
             }
             args = []
-            for p_name in param_defaults.keys():
+            for p_name in param_defaults:
                 if p_name in kwargs:
                     args.append(kwargs.pop(p_name))
                 elif param_defaults[p_name] is not inspect.Parameter.empty:

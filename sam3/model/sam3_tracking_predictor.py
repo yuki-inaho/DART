@@ -6,10 +6,11 @@ import logging
 from collections import OrderedDict
 
 import torch
-from sam3.model.sam3_tracker_base import concat_points, NO_OBJ_SCORE, Sam3TrackerBase
+from tqdm.auto import tqdm
+
+from sam3.model.sam3_tracker_base import NO_OBJ_SCORE, Sam3TrackerBase, concat_points
 from sam3.model.sam3_tracker_utils import fill_holes_in_mask_scores
 from sam3.model.utils.sam2_utils import load_video_frames
-from tqdm.auto import tqdm
 
 
 class Sam3TrackerPredictor(Sam3TrackerBase):
@@ -1044,7 +1045,7 @@ class Sam3TrackerPredictor(Sam3TrackerBase):
             expanded_backbone_out["vision_pos_enc"][i] = pos
 
         features = self._prepare_backbone_features(expanded_backbone_out)
-        features = (expanded_image,) + features
+        features = (expanded_image, *features)
         return features
 
     def _run_single_frame_inference(

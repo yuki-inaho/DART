@@ -19,9 +19,10 @@ Target: <66ms with correct results (cos >0.99)
 
 import sys
 import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -31,6 +32,7 @@ DTYPE = torch.float16
 
 class BackboneWrapper(nn.Module):
     """Wraps backbone to return tuple instead of dict."""
+
     def __init__(self, backbone):
         super().__init__()
         self.backbone = backbone
@@ -85,6 +87,7 @@ def test_mode(model, dummy, pt_ref, mode_name, compile_kwargs):
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return None, None
 
@@ -101,9 +104,11 @@ def test_mode(model, dummy, pt_ref, mode_name, compile_kwargs):
 
     # Benchmark
     print("  Benchmarking (100 iterations)...")
+
     def run_fn(x):
         with torch.autocast("cuda", dtype=DTYPE):
             return compiled(x)
+
     ms = benchmark(run_fn, dummy)
 
     status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
@@ -124,7 +129,7 @@ def test_cuda_graph_manual(model, dummy, pt_ref):
     print("  Warming up...")
     with torch.inference_mode(), torch.autocast("cuda", dtype=DTYPE):
         for _ in range(3):
-            out = backbone.forward_image(dummy)
+            backbone.forward_image(dummy)
 
     # Capture CUDA graph
     print("  Capturing CUDA graph...")
@@ -133,14 +138,22 @@ def test_cuda_graph_manual(model, dummy, pt_ref):
     # Warmup for graph capture
     s = torch.cuda.Stream()
     s.wait_stream(torch.cuda.current_stream())
-    with torch.cuda.stream(s), torch.inference_mode(), torch.autocast("cuda", dtype=DTYPE):
+    with (
+        torch.cuda.stream(s),
+        torch.inference_mode(),
+        torch.autocast("cuda", dtype=DTYPE),
+    ):
         for _ in range(3):
-            out = backbone.forward_image(static_input)
+            backbone.forward_image(static_input)
     torch.cuda.current_stream().wait_stream(s)
 
     # Capture
     g = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(g), torch.inference_mode(), torch.autocast("cuda", dtype=DTYPE):
+    with (
+        torch.cuda.graph(g),
+        torch.inference_mode(),
+        torch.autocast("cuda", dtype=DTYPE),
+    ):
         static_out = backbone.forward_image(static_input)
 
     static_fpn = static_out["backbone_fpn"]
@@ -176,7 +189,9 @@ def main():
 
     print("Loading SAM3 model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -190,6 +205,7 @@ def main():
     def pt_eager(x):
         with torch.autocast("cuda", dtype=DTYPE):
             return backbone.forward_image(x)
+
     ms_eager = benchmark(pt_eager, dummy)
     print(f"  PyTorch eager FP16: {ms_eager:.1f}ms")
 
@@ -199,9 +215,9 @@ def main():
     # Mode 1: default (basic optimization, no CUDA graphs)
     # ================================================================
     try:
-        cos, ms = test_mode(model, dummy, pt_ref, "default",
-                           {"mode": "default"})
-        if cos: results["default"] = (cos, ms)
+        cos, ms = test_mode(model, dummy, pt_ref, "default", {"mode": "default"})
+        if cos:
+            results["default"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -211,9 +227,11 @@ def main():
     # Mode 2: reduce-overhead (CUDA graphs for reduced launch overhead)
     # ================================================================
     try:
-        cos, ms = test_mode(model, dummy, pt_ref, "reduce-overhead",
-                           {"mode": "reduce-overhead"})
-        if cos: results["reduce-overhead"] = (cos, ms)
+        cos, ms = test_mode(
+            model, dummy, pt_ref, "reduce-overhead", {"mode": "reduce-overhead"}
+        )
+        if cos:
+            results["reduce-overhead"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -223,9 +241,11 @@ def main():
     # Mode 3: max-autotune (autotuning + CUDA graphs)
     # ================================================================
     try:
-        cos, ms = test_mode(model, dummy, pt_ref, "max-autotune",
-                           {"mode": "max-autotune"})
-        if cos: results["max-autotune"] = (cos, ms)
+        cos, ms = test_mode(
+            model, dummy, pt_ref, "max-autotune", {"mode": "max-autotune"}
+        )
+        if cos:
+            results["max-autotune"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -235,9 +255,15 @@ def main():
     # Mode 4: max-autotune-no-cudagraphs
     # ================================================================
     try:
-        cos, ms = test_mode(model, dummy, pt_ref, "max-autotune-no-cudagraphs",
-                           {"mode": "max-autotune-no-cudagraphs"})
-        if cos: results["max-autotune-no-cg"] = (cos, ms)
+        cos, ms = test_mode(
+            model,
+            dummy,
+            pt_ref,
+            "max-autotune-no-cudagraphs",
+            {"mode": "max-autotune-no-cudagraphs"},
+        )
+        if cos:
+            results["max-autotune-no-cg"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
     torch._dynamo.reset()
@@ -248,7 +274,8 @@ def main():
     # ================================================================
     try:
         cos, ms = test_cuda_graph_manual(model, dummy, pt_ref)
-        if cos: results["manual_cuda_graph"] = (cos, ms)
+        if cos:
+            results["manual_cuda_graph"] = (cos, ms)
     except Exception as e:
         print(f"  FAILED: {e}")
 

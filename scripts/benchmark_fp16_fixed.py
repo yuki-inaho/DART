@@ -2,7 +2,9 @@
 """Benchmark TRT backbone engines: FP16-fixed vs FP32 vs PyTorch."""
 
 import time
+
 import torch
+
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.trt_backbone import TRTBackbone
 
@@ -12,7 +14,9 @@ N_ITERS = 50
 
 print("Loading model...")
 model = build_sam3_image_model(
-    device=device, checkpoint_path="sam3.pt", eval_mode=True,
+    device=device,
+    checkpoint_path="sam3.pt",
+    eval_mode=True,
 )
 backbone = model.backbone
 pos_module = backbone.vision_backbone.position_encoding
@@ -52,6 +56,7 @@ engines = {
 }
 
 import os
+
 for label, path in engines.items():
     if not os.path.exists(path):
         print(f"\n--- {label} --- SKIPPED (not found: {path})")
@@ -59,7 +64,9 @@ for label, path in engines.items():
 
     print(f"\n--- {label} ---")
     try:
-        trt_bb = TRTBackbone(engine_path=path, device=device, pos_encoding_module=pos_module)
+        trt_bb = TRTBackbone(
+            engine_path=path, device=device, pos_encoding_module=pos_module
+        )
     except Exception as e:
         print(f"  SKIPPED: {e}")
         continue

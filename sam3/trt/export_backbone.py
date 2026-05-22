@@ -25,10 +25,8 @@ Usage:
 """
 
 import argparse
-import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -70,7 +68,9 @@ class _TrunkForExport(nn.Module):
 
 def _export_torchscript(export_module, dummy, output_path, opset_version, output_names):
     """Export via classic TorchScript tracing (original path)."""
-    print(f"Exporting to ONNX via TorchScript (opset {opset_version}) -> {output_path} ...")
+    print(
+        f"Exporting to ONNX via TorchScript (opset {opset_version}) -> {output_path} ..."
+    )
     with torch.no_grad():
         torch.onnx.export(
             export_module,
@@ -110,6 +110,7 @@ def _export_dynamo(export_module, dummy, output_path, opset_version, output_name
 
     # Check if dynamo export is available
     import inspect
+
     export_sig = inspect.signature(torch.onnx.export)
     has_dynamo_param = "dynamo" in export_sig.parameters
 
@@ -138,7 +139,9 @@ def _export_dynamo(export_module, dummy, output_path, opset_version, output_name
         print("ERROR: Dynamo export requires PyTorch >= 2.1")
         print("  Your PyTorch version:", torch.__version__)
         print("  Falling back to TorchScript export.")
-        _export_torchscript(export_module, dummy, output_path, opset_version, output_names)
+        _export_torchscript(
+            export_module, dummy, output_path, opset_version, output_names
+        )
         return
 
     # Note: onnxsim may not work on dynamo-exported graphs (different structure).
@@ -154,7 +157,9 @@ def _export_dynamo(export_module, dummy, output_path, opset_version, output_name
             onnx.save(model_simp, output_path)
             print("  Simplified successfully.")
         else:
-            print("  Simplification failed (normal for dynamo graphs), keeping original.")
+            print(
+                "  Simplification failed (normal for dynamo graphs), keeping original."
+            )
     except ImportError:
         print("  onnxsim not installed, skipping simplification.")
     except Exception as e:
@@ -187,7 +192,7 @@ def export_onnx(
 
     # Apply block skipping
     if skip_blocks:
-        skip_set = set(int(x.strip()) for x in skip_blocks.split(","))
+        skip_set = {int(x.strip()) for x in skip_blocks.split(",")}
         trunk = backbone.vision_backbone.trunk
         trunk.skip_blocks = skip_set
         print(f"Skipping {len(skip_set)} blocks: {sorted(skip_set)}")
@@ -200,8 +205,10 @@ def export_onnx(
         # The pruned checkpoint contains vision_backbone state_dict keys
         vision_bb = backbone.vision_backbone
         missing, unexpected = vision_bb.load_state_dict(state, strict=False)
-        print(f"  Loaded: {len(state)} keys, "
-              f"{len(missing)} missing (pruned), {len(unexpected)} unexpected")
+        print(
+            f"  Loaded: {len(state)} keys, "
+            f"{len(missing)} missing (pruned), {len(unexpected)} unexpected"
+        )
         # Auto-apply skip_blocks from checkpoint metadata if not specified
         if not skip_blocks and "skip_blocks" in ckpt and ckpt["skip_blocks"]:
             skip_set = set(ckpt["skip_blocks"])
@@ -247,14 +254,18 @@ def export_onnx(
 
     # Use appropriate opset for dynamo (default 18)
     if use_dynamo and opset_version < 18:
-        print(f"  Note: Bumping opset {opset_version} -> 18 (minimum for dynamo export)")
+        print(
+            f"  Note: Bumping opset {opset_version} -> 18 (minimum for dynamo export)"
+        )
         opset_version = 18
 
     # Export
     if use_dynamo:
         _export_dynamo(export_module, dummy, output_path, opset_version, output_names)
     else:
-        _export_torchscript(export_module, dummy, output_path, opset_version, output_names)
+        _export_torchscript(
+            export_module, dummy, output_path, opset_version, output_names
+        )
 
     # Print file size
     size_mb = Path(output_path).stat().st_size / (1024 * 1024)
@@ -275,8 +286,9 @@ def export_onnx(
 
     # Print ONNX graph summary
     try:
-        import onnx
         from collections import Counter
+
+        import onnx
 
         onnx_model = onnx.load(output_path)
         graph = onnx_model.graph
@@ -289,7 +301,7 @@ def export_onnx(
         for out in graph.output:
             dims = [d.dim_value or d.dim_param for d in out.type.tensor_type.shape.dim]
             print(f"    {out.name}: {dims}")
-        print(f"  Top ops:")
+        print("  Top ops:")
         for op, count in op_counts.most_common(15):
             print(f"    {op}: {count}")
     except Exception:
@@ -337,7 +349,9 @@ def export_trunk_onnx(
     if use_dynamo:
         _export_dynamo(export_module, dummy, output_path, opset_version, output_names)
     else:
-        _export_torchscript(export_module, dummy, output_path, opset_version, output_names)
+        _export_torchscript(
+            export_module, dummy, output_path, opset_version, output_names
+        )
 
     size_mb = Path(output_path).stat().st_size / (1024 * 1024)
     print(f"Done. Trunk ONNX saved: {output_path} ({size_mb:.1f} MB)")
@@ -345,6 +359,7 @@ def export_trunk_onnx(
     # Validate
     try:
         import onnx
+
         onnx_model = onnx.load(output_path)
         onnx.checker.check_model(onnx_model)
         print("ONNX model validation passed.")
@@ -362,9 +377,7 @@ def main():
     parser.add_argument(
         "--output", default="backbone.onnx", help="Output ONNX file path"
     )
-    parser.add_argument(
-        "--opset", type=int, default=17, help="ONNX opset version"
-    )
+    parser.add_argument("--opset", type=int, default=17, help="ONNX opset version")
     parser.add_argument(
         "--no-validate",
         action="store_true",
@@ -374,22 +387,26 @@ def main():
         "--dynamo",
         action="store_true",
         help="Use dynamo-based export (PyTorch 2.5+). Produces a different "
-             "ONNX graph that may fix TRT FP16 numerical issues.",
+        "ONNX graph that may fix TRT FP16 numerical issues.",
     )
     parser.add_argument(
         "--trunk-only",
         action="store_true",
         help="Export only the ViT trunk (no FPN neck). Produces a single "
-             "output tensor. Used by the native video tracker.",
+        "output tensor. Used by the native video tracker.",
     )
     parser.add_argument(
-        "--skip-blocks", type=str, default=None,
+        "--skip-blocks",
+        type=str,
+        default=None,
         help="Comma-separated block indices to skip entirely, e.g. '25,28,27'",
     )
     parser.add_argument(
-        "--pruned-checkpoint", type=str, default=None,
+        "--pruned-checkpoint",
+        type=str,
+        default=None,
         help="Path to pruned checkpoint from prune_trainer (.pt). "
-             "Loads fine-tuned weights and auto-applies skip_blocks.",
+        "Loads fine-tuned weights and auto-applies skip_blocks.",
     )
     args = parser.parse_args()
 

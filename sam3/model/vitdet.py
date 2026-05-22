@@ -13,8 +13,8 @@ Rope embedding code adopted from:
 """
 
 import math
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -33,7 +33,7 @@ from .model_misc import LayerScale
 
 def init_t_xy(
     end_x: int, end_y: int, scale: float = 1.0, offset: int = 0
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     t = torch.arange(end_x * end_y, dtype=torch.float32)
     t_x = (t % end_x).float()
     t_y = torch.div(t, end_x, rounding_mode="floor").float()
@@ -72,7 +72,7 @@ def apply_rotary_enc(
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
     repeat_freqs_k: bool = False,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = (
         torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
@@ -92,7 +92,7 @@ def apply_rotary_enc(
     return xq_out.type_as(xq).to(xq.device), xk_out.type_as(xk).to(xk.device)
 
 
-def window_partition(x: Tensor, window_size: int) -> Tuple[Tensor, Tuple[int, int]]:
+def window_partition(x: Tensor, window_size: int) -> tuple[Tensor, tuple[int, int]]:
     """
     Partition into non-overlapping windows with padding if needed.
     Args:
@@ -116,7 +116,7 @@ def window_partition(x: Tensor, window_size: int) -> Tuple[Tensor, Tuple[int, in
 
 
 def window_unpartition(
-    windows: Tensor, window_size: int, pad_hw: Tuple[int, int], hw: Tuple[int, int]
+    windows: Tensor, window_size: int, pad_hw: tuple[int, int], hw: tuple[int, int]
 ) -> Tensor:
     """
     Window unpartition into original sequences and removing padding.
@@ -177,7 +177,7 @@ def get_rel_pos(q_size: int, k_size: int, rel_pos: Tensor) -> Tensor:
 def get_abs_pos(
     abs_pos: Tensor,
     has_cls_token: bool,
-    hw: Tuple[int, int],
+    hw: tuple[int, int],
     retain_cls_token: bool = False,
     tiling: bool = False,
 ) -> Tensor:
@@ -241,13 +241,13 @@ def get_abs_pos(
 def concat_rel_pos(
     q: Tensor,
     k: Tensor,
-    q_hw: Tuple[int, int],
-    k_hw: Tuple[int, int],
+    q_hw: tuple[int, int],
+    k_hw: tuple[int, int],
     rel_pos_h: Tensor,
     rel_pos_w: Tensor,
     rescale: bool = False,
-    relative_coords: Optional[Tensor] = None,
-) -> Tuple[Tensor, Tensor]:
+    relative_coords: Tensor | None = None,
+) -> tuple[Tensor, Tensor]:
     """
     Concatenate rel pos coeffs to the q & k tensors, so that qk^T is now
     effectively including rel pos biases.
@@ -305,9 +305,9 @@ class PatchEmbed(nn.Module):
 
     def __init__(
         self,
-        kernel_size: Tuple[int, int] = (16, 16),
-        stride: Tuple[int, int] = (16, 16),
-        padding: Tuple[int, int] = (0, 0),
+        kernel_size: tuple[int, int] = (16, 16),
+        stride: tuple[int, int] = (16, 16),
+        padding: tuple[int, int] = (0, 0),
         in_chans: int = 3,
         embed_dim: int = 768,
         bias: bool = True,
@@ -348,11 +348,11 @@ class Attention(nn.Module):
         qkv_bias: bool = True,
         use_rel_pos: bool = False,
         rel_pos_zero_init: bool = True,
-        input_size: Optional[Tuple[int, int]] = None,
+        input_size: tuple[int, int] | None = None,
         cls_token: bool = False,
         use_rope: bool = False,
         rope_theta: float = 10000.0,
-        rope_pt_size: Optional[Tuple[int, int]] = None,
+        rope_pt_size: tuple[int, int] | None = None,
         rope_interp: bool = False,
     ):
         """
@@ -458,7 +458,7 @@ class Attention(nn.Module):
 
         self.register_buffer("freqs_cis", freqs_cis)
 
-    def _apply_rope(self, q, k) -> Tuple[Tensor, Tensor]:
+    def _apply_rope(self, q, k) -> tuple[Tensor, Tensor]:
         if not self.use_rope:
             return q, k
 
@@ -475,7 +475,9 @@ class Attention(nn.Module):
             if self.rope_interp and self.rope_pt_size is not None:
                 scale_pos = self.rope_pt_size[0] / spatial
             freqs_cis = self.compute_cis(
-                end_x=spatial, end_y=spatial, scale_pos=scale_pos,
+                end_x=spatial,
+                end_y=spatial,
+                scale_pos=scale_pos,
             ).to(self.freqs_cis.device)
             return apply_rotary_enc(q, k, freqs_cis=freqs_cis)
         return apply_rotary_enc(q, k, freqs_cis=self.freqs_cis)
@@ -547,15 +549,15 @@ class Block(nn.Module):
         use_rel_pos: bool = False,
         rel_pos_zero_init: bool = True,
         window_size: int = 0,
-        input_size: Optional[Tuple[int, int]] = None,
+        input_size: tuple[int, int] | None = None,
         use_rope: bool = False,
-        rope_pt_size: Optional[Tuple[int, int]] = None,
+        rope_pt_size: tuple[int, int] | None = None,
         rope_tiled: bool = False,
         rope_interp: bool = False,
         use_ve_rope: bool = False,
         cls_token: bool = False,
         dropout: float = 0.0,
-        init_values: Optional[float] = None,
+        init_values: float | None = None,
     ):
         """
         Args:
@@ -656,27 +658,27 @@ class ViT(nn.Module):
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
         drop_path_rate: float = 0.0,
-        norm_layer: Union[Callable[..., nn.Module], str] = "LayerNorm",
+        norm_layer: Callable[..., nn.Module] | str = "LayerNorm",
         act_layer: Callable[..., nn.Module] = nn.GELU,
         use_abs_pos: bool = True,
         tile_abs_pos: bool = True,
-        rel_pos_blocks: Union[Tuple[int, ...], bool] = (2, 5, 8, 11),
+        rel_pos_blocks: tuple[int, ...] | bool = (2, 5, 8, 11),
         rel_pos_zero_init: bool = True,
         window_size: int = 14,
-        global_att_blocks: Tuple[int, ...] = (2, 5, 8, 11),
+        global_att_blocks: tuple[int, ...] = (2, 5, 8, 11),
         use_rope: bool = False,
-        rope_pt_size: Optional[int] = None,
+        rope_pt_size: int | None = None,
         use_interp_rope: bool = False,
         pretrain_img_size: int = 224,
         pretrain_use_cls_token: bool = True,
         retain_cls_token: bool = True,
         dropout: float = 0.0,
         return_interm_layers: bool = False,
-        init_values: Optional[float] = None,  # for layerscale
+        init_values: float | None = None,  # for layerscale
         ln_pre: bool = False,
         ln_post: bool = False,
         bias_patch_embed: bool = True,
-        compile_mode: Optional[str] = None,
+        compile_mode: str | None = None,
         use_act_checkpoint: bool = True,
     ):
         """
@@ -840,7 +842,7 @@ class ViT(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
         x = self.patch_embed(x)
         h, w = x.shape[1], x.shape[2]
 
@@ -924,7 +926,7 @@ class ViT(nn.Module):
 
     def forward_part2(
         self, intermediate: dict, split_block: int = 24
-    ) -> List[torch.Tensor]:
+    ) -> list[torch.Tensor]:
         """Run blocks[split_block:] + ln_post + reshape.
 
         Takes intermediate state from forward_part1(). Returns same format as forward().
@@ -963,11 +965,12 @@ class ViT(nn.Module):
 
         if layer_name.find("rel_pos") != -1:
             return num_layers + 1
-        elif layer_name.find("ln_pre") != -1:
-            return 0
-        elif layer_name.find("pos_embed") != -1 or layer_name.find("cls_token") != -1:
-            return 0
-        elif layer_name.find("patch_embed") != -1:
+        elif (
+            layer_name.find("ln_pre") != -1
+            or layer_name.find("pos_embed") != -1
+            or layer_name.find("cls_token") != -1
+            or layer_name.find("patch_embed") != -1
+        ):
             return 0
         elif layer_name.find("blocks") != -1:
             return int(layer_name.split("blocks")[1].split(".")[1]) + 1

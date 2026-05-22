@@ -24,7 +24,12 @@ import time
 
 # Add DLL directories for TensorRT + torch (Windows)
 _site = os.path.join(sys.prefix, "Lib", "site-packages")
-for _pkg in ["tensorrt_cu12_libs", "tensorrt_cu13_libs", "torch/lib", "torch_tensorrt/lib"]:
+for _pkg in [
+    "tensorrt_cu12_libs",
+    "tensorrt_cu13_libs",
+    "torch/lib",
+    "torch_tensorrt/lib",
+]:
     _p = os.path.join(_site, _pkg)
     if os.path.isdir(_p) and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(_p)
@@ -72,9 +77,17 @@ def benchmark_fn(fn, img_tensor, n_warmup=10, n_runs=50, label=""):
     p50 = np.percentile(times, 50)
     p95 = np.percentile(times, 95)
 
-    print(f"  Avg: {avg_ms:.1f}ms  Min: {min_ms:.1f}ms  P50: {p50:.1f}ms  P95: {p95:.1f}ms")
+    print(
+        f"  Avg: {avg_ms:.1f}ms  Min: {min_ms:.1f}ms  P50: {p50:.1f}ms  P95: {p95:.1f}ms"
+    )
 
-    return out, {"label": label, "avg_ms": avg_ms, "min_ms": min_ms, "p50": p50, "p95": p95}
+    return out, {
+        "label": label,
+        "avg_ms": avg_ms,
+        "min_ms": min_ms,
+        "p50": p50,
+        "p95": p95,
+    }
 
 
 def main():
@@ -93,22 +106,29 @@ def main():
     # Check torch_tensorrt availability
     try:
         import torch_tensorrt
+
         print(f"Torch-TensorRT: {torch_tensorrt.__version__}")
     except ImportError:
         print("ERROR: torch_tensorrt not installed. pip install torch-tensorrt")
         sys.exit(1)
 
     # Load model
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
     from torchvision.transforms import v2
 
+    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
+
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
 
     # Prepare input
@@ -126,8 +146,7 @@ def main():
         return backbone.forward_image(x)
 
     ref_out, ref_stats = benchmark_fn(
-        eager_fn, img_tensor, args.warmup, args.runs,
-        "PyTorch FP32 (eager)"
+        eager_fn, img_tensor, args.warmup, args.runs, "PyTorch FP32 (eager)"
     )
     ref_fpn = ref_out["backbone_fpn"]
     ref_dict = {f"fpn_{i}": ref_fpn[i] for i in range(len(ref_fpn))}
@@ -151,8 +170,11 @@ def main():
             fullgraph=False,
         )
         out, stats = benchmark_fn(
-            backbone_inductor, img_tensor, args.warmup, args.runs,
-            "torch.compile inductor (max-autotune)"
+            backbone_inductor,
+            img_tensor,
+            args.warmup,
+            args.runs,
+            "torch.compile inductor (max-autotune)",
         )
         print_cosines(out, ref_dict)
         results.append(stats)
@@ -167,6 +189,7 @@ def main():
     # Torch-TensorRT doesn't support complex64 (from RoPE's view_as_complex).
     print("\nPatching RoPE (complex -> real arithmetic) for TRT compatibility...")
     from sam3.trt.rope_onnx import patch_rope_for_export
+
     patch_rope_for_export(backbone)
 
     # Verify patched backbone still produces correct output
@@ -194,14 +217,18 @@ def main():
             },
         )
         out, stats = benchmark_fn(
-            backbone_trt_fp16_et, img_tensor, args.warmup, args.runs,
-            "Torch-TRT FP16 fp32acc+explicit_typing"
+            backbone_trt_fp16_et,
+            img_tensor,
+            args.warmup,
+            args.runs,
+            "Torch-TRT FP16 fp32acc+explicit_typing",
         )
         print_cosines(out, ref_dict)
         results.append(stats)
     except Exception as e:
         print(f"  ERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Clear compile caches
@@ -225,14 +252,18 @@ def main():
             },
         )
         out, stats = benchmark_fn(
-            backbone_trt_fp16, img_tensor, args.warmup, args.runs,
-            "Torch-TRT FP16 fp32acc (no explicit)"
+            backbone_trt_fp16,
+            img_tensor,
+            args.warmup,
+            args.runs,
+            "Torch-TRT FP16 fp32acc (no explicit)",
         )
         print_cosines(out, ref_dict)
         results.append(stats)
     except Exception as e:
         print(f"  ERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Clear compile caches
@@ -255,14 +286,18 @@ def main():
             },
         )
         out, stats = benchmark_fn(
-            backbone_trt_fp16_noacc, img_tensor, args.warmup, args.runs,
-            "Torch-TRT FP16 (no fp32_acc)"
+            backbone_trt_fp16_noacc,
+            img_tensor,
+            args.warmup,
+            args.runs,
+            "Torch-TRT FP16 (no fp32_acc)",
         )
         print_cosines(out, ref_dict)
         results.append(stats)
     except Exception as e:
         print(f"  ERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Clear compile caches
@@ -283,24 +318,26 @@ def main():
             },
         )
         out, stats = benchmark_fn(
-            backbone_trt_fp32, img_tensor, args.warmup, args.runs,
-            "Torch-TRT FP32"
+            backbone_trt_fp32, img_tensor, args.warmup, args.runs, "Torch-TRT FP32"
         )
         print_cosines(out, ref_dict)
         results.append(stats)
     except Exception as e:
         print(f"  ERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Summary
-    print(f"\n\n{'='*70}")
+    print(f"\n\n{'=' * 70}")
     print("SUMMARY")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"{'Backend':<45s} {'Avg':>7s} {'Min':>7s} {'P50':>7s}")
-    print(f"{'-'*45} {'-'*7} {'-'*7} {'-'*7}")
+    print(f"{'-' * 45} {'-' * 7} {'-' * 7} {'-' * 7}")
     for r in results:
-        print(f"{r['label']:<45s} {r['avg_ms']:>6.1f}ms {r['min_ms']:>6.1f}ms {r['p50']:>6.1f}ms")
+        print(
+            f"{r['label']:<45s} {r['avg_ms']:>6.1f}ms {r['min_ms']:>6.1f}ms {r['p50']:>6.1f}ms"
+        )
 
 
 if __name__ == "__main__":

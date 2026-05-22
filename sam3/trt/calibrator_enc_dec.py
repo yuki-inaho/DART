@@ -18,7 +18,6 @@ import os
 import random
 from pathlib import Path
 
-import numpy as np
 import torch
 from torchvision.transforms import v2
 
@@ -102,12 +101,14 @@ class EncDecCalibrator(_CalibratorBase):
         self.current_batch = 0
 
         # Same transform as inference
-        self.transform = v2.Compose([
-            v2.ToDtype(torch.uint8, scale=True),
-            v2.Resize(size=(1008, 1008)),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ])
+        self.transform = v2.Compose(
+            [
+                v2.ToDtype(torch.uint8, scale=True),
+                v2.Resize(size=(1008, 1008)),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
 
         # Pre-compute position encoding for FPN level (72x72)
         pe_module = model.backbone.vision_backbone.position_encoding
@@ -125,9 +126,7 @@ class EncDecCalibrator(_CalibratorBase):
         self._buf_text = torch.empty(
             32, max_classes, 256, dtype=torch.float32, device="cuda"
         )
-        self._buf_mask = torch.ones(
-            max_classes, 32, dtype=torch.float32, device="cuda"
-        )
+        self._buf_mask = torch.ones(max_classes, 32, dtype=torch.float32, device="cuda")
 
         print(
             f"EncDec INT8 Calibrator: {len(self.image_paths)} images, "
@@ -172,7 +171,7 @@ class EncDecCalibrator(_CalibratorBase):
         with torch.no_grad():
             text_out = self.model.backbone.forward_text(class_names, device="cuda")
         text_feats = text_out["language_features"]  # (32, n_classes, 256)
-        text_mask = text_out["language_mask"]        # (n_classes, 32)
+        text_mask = text_out["language_mask"]  # (n_classes, 32)
 
         # Pack into fixed-size buffers
         # Image: replicate FPN features to max_classes
@@ -188,9 +187,7 @@ class EncDecCalibrator(_CalibratorBase):
 
         self.current_batch += 1
         if self.current_batch % 50 == 0 or self.current_batch == self.num_batches:
-            print(
-                f"  Calibration sample {self.current_batch}/{self.num_batches}"
-            )
+            print(f"  Calibration sample {self.current_batch}/{self.num_batches}")
 
         return [
             self._buf_img.data_ptr(),

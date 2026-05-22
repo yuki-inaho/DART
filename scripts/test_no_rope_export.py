@@ -7,16 +7,16 @@ If it still fails, the issue is in the compounding of MatMul errors.
 
 import sys
 import time
-import torch
-import numpy as np
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import tensorrt as trt
+
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
-
-import tensorrt as trt
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = "cuda"
@@ -46,7 +46,7 @@ def _restore_rope(model):
     trunk = model.backbone.vision_backbone.trunk
     for block in trunk.blocks:
         attn = block.attn
-        if hasattr(attn, '_orig_apply_rope'):
+        if hasattr(attn, "_orig_apply_rope"):
             attn._apply_rope = attn._orig_apply_rope
 
 
@@ -103,6 +103,7 @@ def build_fp16_engine(onnx_path, output_path):
 
     # Count layer types
     from collections import Counter
+
     types = Counter()
     for i in range(network.num_layers):
         layer = network.get_layer(i)
@@ -111,7 +112,7 @@ def build_fp16_engine(onnx_path, output_path):
 
     t0 = time.time()
     engine_bytes = builder.build_serialized_network(network, config)
-    print(f"  Built in {time.time()-t0:.0f}s")
+    print(f"  Built in {time.time() - t0:.0f}s")
 
     if engine_bytes is None:
         raise RuntimeError("Build failed")
@@ -138,7 +139,9 @@ def test_accuracy(engine_path, label, model, dummy, use_rope=True):
 
     pos_module = backbone.vision_backbone.position_encoding
     trt_bb = TRTBackbone(
-        engine_path=engine_path, device=DEVICE, pos_encoding_module=pos_module,
+        engine_path=engine_path,
+        device=DEVICE,
+        pos_encoding_module=pos_module,
     )
 
     with torch.inference_mode():
@@ -165,7 +168,9 @@ def test_accuracy(engine_path, label, model, dummy, use_rope=True):
         ms = (time.perf_counter() - t0) / 50 * 1000
 
     status = "OK" if cos[-1] > 0.99 else "BROKEN"
-    print(f"  {label:30s} | cos=[{cos[0]:.4f}, {cos[1]:.4f}, {cos[2]:.4f}] | {ms:.1f}ms | {status}")
+    print(
+        f"  {label:30s} | cos=[{cos[0]:.4f}, {cos[1]:.4f}, {cos[2]:.4f}] | {ms:.1f}ms | {status}"
+    )
 
     del trt_bb
     torch.cuda.empty_cache()
@@ -174,7 +179,9 @@ def test_accuracy(engine_path, label, model, dummy, use_rope=True):
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -185,15 +192,31 @@ def main():
     # Export without RoPE
     export_backbone(model, "backbone_no_rope.onnx", use_rope=False)
     build_fp16_engine("backbone_no_rope.onnx", "backbone_no_rope_fp16.engine")
-    test_accuracy("backbone_no_rope_fp16.engine", "FP16 WITHOUT RoPE", model, dummy, use_rope=False)
+    test_accuracy(
+        "backbone_no_rope_fp16.engine",
+        "FP16 WITHOUT RoPE",
+        model,
+        dummy,
+        use_rope=False,
+    )
 
     # Compare with original backbone.onnx
     print()
     build_fp16_engine("backbone.onnx", "backbone_with_rope_fp16.engine")
-    test_accuracy("backbone_with_rope_fp16.engine", "FP16 WITH RoPE (original)", model, dummy, use_rope=True)
+    test_accuracy(
+        "backbone_with_rope_fp16.engine",
+        "FP16 WITH RoPE (original)",
+        model,
+        dummy,
+        use_rope=True,
+    )
 
     # Cleanup
-    for f in ["backbone_no_rope.onnx", "backbone_no_rope_fp16.engine", "backbone_with_rope_fp16.engine"]:
+    for f in [
+        "backbone_no_rope.onnx",
+        "backbone_no_rope_fp16.engine",
+        "backbone_with_rope_fp16.engine",
+    ]:
         Path(f).unlink(missing_ok=True)
 
     print("\nDone!")

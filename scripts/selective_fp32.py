@@ -7,11 +7,10 @@ input (weight tensor) and stay in FP16.
 """
 
 import time
-import torch
-import tensorrt as trt
 from pathlib import Path
-from PIL import Image
-from torchvision.transforms import v2
+
+import tensorrt as trt
+import torch
 
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.trt_backbone import TRTBackbone
@@ -38,17 +37,37 @@ def build_selective_fp32(onnx_path, engine_path, opt_level=3):
     if hasattr(config, "builder_optimization_level"):
         config.builder_optimization_level = opt_level
 
-    for flag_name in ("OBEY_PRECISION_CONSTRAINTS", "PREFER_PRECISION_CONSTRAINTS", "STRICT_TYPES"):
+    for flag_name in (
+        "OBEY_PRECISION_CONSTRAINTS",
+        "PREFER_PRECISION_CONSTRAINTS",
+        "STRICT_TYPES",
+    ):
         if hasattr(trt.BuilderFlag, flag_name):
             config.set_flag(getattr(trt.BuilderFlag, flag_name))
             break
 
     # Skip types
     skip_types = set()
-    for name in ("SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-                 "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-                 "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-                 "NON_ZERO", "ONE_HOT", "GRID_SAMPLE"):
+    for name in (
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
+    ):
         if hasattr(trt.LayerType, name):
             skip_types.add(getattr(trt.LayerType, name))
 
@@ -121,7 +140,9 @@ def build_selective_fp32(onnx_path, engine_path, opt_level=3):
 
     print(f"  Network layers: {network.num_layers}")
     print(f"  Selective FP32: {fp32_count} FP32, {fp16_count} FP16, {skip_count} skip")
-    print(f"  Attention MatMuls: {attn_matmul} FP32, Projection MatMuls: {proj_matmul} FP16")
+    print(
+        f"  Attention MatMuls: {attn_matmul} FP32, Projection MatMuls: {proj_matmul} FP16"
+    )
 
     print("  Building engine...")
     t0 = time.perf_counter()
@@ -140,7 +161,9 @@ def build_selective_fp32(onnx_path, engine_path, opt_level=3):
 
 def benchmark(engine_path, backbone, dummy, n_warmup=5, n_iters=50):
     pos_module = backbone.vision_backbone.position_encoding
-    trt_bb = TRTBackbone(engine_path=engine_path, device="cuda", pos_encoding_module=pos_module)
+    trt_bb = TRTBackbone(
+        engine_path=engine_path, device="cuda", pos_encoding_module=pos_module
+    )
 
     with torch.inference_mode():
         # Get PyTorch reference
@@ -176,7 +199,9 @@ def main():
 
     print("Loading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path="sam3.pt", eval_mode=True,
+        device=device,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     backbone = model.backbone
     dummy = torch.randn(1, 3, 1008, 1008, device=device)

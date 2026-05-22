@@ -13,9 +13,6 @@ from collections import OrderedDict
 from pathlib import Path
 
 import torch
-import torch.nn as nn
-import numpy as np
-from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sam3.model_builder import build_sam3_image_model
@@ -67,8 +64,10 @@ def profile_backbone(model, images):
                     "overflow_fp16": abs_max > FP16_MAX,
                     "near_overflow": abs_max > FP16_MAX * 0.5,
                     "num_overflow": (t_flat.abs() > FP16_MAX).sum().item(),
-                    "pct_overflow": (t_flat.abs() > FP16_MAX).float().mean().item() * 100,
+                    "pct_overflow": (t_flat.abs() > FP16_MAX).float().mean().item()
+                    * 100,
                 }
+
         return hook_fn
 
     # Register hooks on every submodule
@@ -85,7 +84,7 @@ def profile_backbone(model, images):
         orig_forward = attn.forward
 
         def patched_forward(x, *args, **kwargs):
-            B, H, W, C = x.shape if x.dim() == 4 else (1, 1, x.shape[0], x.shape[1])
+            _B, _H, _W, _C = x.shape if x.dim() == 4 else (1, 1, x.shape[0], x.shape[1])
 
             # Get QKV
             qkv = attn.qkv(x)
@@ -132,7 +131,11 @@ def profile_attention_detailed(model, dummy):
         orig_forward = attn.forward
 
         def detailed_forward(x, *args, **kwargs):
-            B, N, C = x.shape if x.dim() == 3 else (x.shape[0], x.shape[1] * x.shape[2], x.shape[3])
+            B, _N, C = (
+                x.shape
+                if x.dim() == 3
+                else (x.shape[0], x.shape[1] * x.shape[2], x.shape[3])
+            )
 
             # Manually compute attention to capture intermediates
             qkv_out = attn.qkv(x)
@@ -157,25 +160,27 @@ def profile_attention_detailed(model, dummy):
 
             # Compute Q@K^T (attention scores before scaling)
             scores_raw = torch.matmul(q.float(), k.float().transpose(-2, -1))
-            scale = head_dim ** -0.5
+            scale = head_dim**-0.5
             scores_scaled = scores_raw * scale
 
-            attention_stats.append({
-                "block": block_idx,
-                "q_abs_max": q.float().abs().max().item(),
-                "k_abs_max": k.float().abs().max().item(),
-                "v_abs_max": v.float().abs().max().item(),
-                "q_std": q.float().std().item(),
-                "k_std": k.float().std().item(),
-                "qkv_proj_abs_max": qkv_out.float().abs().max().item(),
-                "scores_raw_abs_max": scores_raw.abs().max().item(),
-                "scores_raw_std": scores_raw.std().item(),
-                "scores_scaled_abs_max": scores_scaled.abs().max().item(),
-                "scores_scaled_std": scores_scaled.std().item(),
-                "scores_overflow_fp16": scores_scaled.abs().max().item() > FP16_MAX,
-                "head_dim": head_dim,
-                "num_tokens": q.shape[2],
-            })
+            attention_stats.append(
+                {
+                    "block": block_idx,
+                    "q_abs_max": q.float().abs().max().item(),
+                    "k_abs_max": k.float().abs().max().item(),
+                    "v_abs_max": v.float().abs().max().item(),
+                    "q_std": q.float().std().item(),
+                    "k_std": k.float().std().item(),
+                    "qkv_proj_abs_max": qkv_out.float().abs().max().item(),
+                    "scores_raw_abs_max": scores_raw.abs().max().item(),
+                    "scores_raw_std": scores_raw.std().item(),
+                    "scores_scaled_abs_max": scores_scaled.abs().max().item(),
+                    "scores_scaled_std": scores_scaled.std().item(),
+                    "scores_overflow_fp16": scores_scaled.abs().max().item() > FP16_MAX,
+                    "head_dim": head_dim,
+                    "num_tokens": q.shape[2],
+                }
+            )
 
             # Run original forward
             return orig_forward(x, *args, **kwargs)
@@ -194,7 +199,9 @@ def profile_attention_detailed(model, dummy):
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
 
     # Use a real image and a random tensor
@@ -207,7 +214,7 @@ def main():
     print("PART 1: Layer-by-layer activation statistics")
     print("=" * 80)
 
-    stats, attn_int = profile_backbone(model, [dummy])
+    stats, _attn_int = profile_backbone(model, [dummy])
 
     # Print overflow layers
     print(f"\n{'Layer':<70s} | {'AbsMax':>10s} | {'Std':>8s} | FP16?")
@@ -218,7 +225,9 @@ def main():
     for name, s in stats.items():
         if s["overflow_fp16"]:
             overflow_layers.append((name, s))
-            print(f"  {name:<68s} | {s['abs_max']:>10.1f} | {s['std']:>8.3f} | OVERFLOW ({s['pct_overflow']:.1f}%)")
+            print(
+                f"  {name:<68s} | {s['abs_max']:>10.1f} | {s['std']:>8.3f} | OVERFLOW ({s['pct_overflow']:.1f}%)"
+            )
         elif s["near_overflow"]:
             near_overflow_layers.append((name, s))
 
@@ -228,7 +237,7 @@ def main():
         print(f"\n  Total layers with FP16 overflow: {len(overflow_layers)}")
 
     if near_overflow_layers:
-        print(f"\n  Layers near FP16 overflow (abs_max > {FP16_MAX/2:.0f}):")
+        print(f"\n  Layers near FP16 overflow (abs_max > {FP16_MAX / 2:.0f}):")
         for name, s in near_overflow_layers[:20]:
             print(f"    {name:<66s} | {s['abs_max']:>10.1f}")
 
@@ -243,21 +252,27 @@ def main():
     del model
     torch.cuda.empty_cache()
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
 
     attn_stats = profile_attention_detailed(model, dummy)
 
-    print(f"\n{'Block':>5s} | {'Q abs_max':>10s} | {'K abs_max':>10s} | {'QKV proj':>10s} | "
-          f"{'Score raw':>10s} | {'Score scl':>10s} | {'Q std':>8s} | Overflow?")
+    print(
+        f"\n{'Block':>5s} | {'Q abs_max':>10s} | {'K abs_max':>10s} | {'QKV proj':>10s} | "
+        f"{'Score raw':>10s} | {'Score scl':>10s} | {'Q std':>8s} | Overflow?"
+    )
     print("-" * 105)
 
     for s in attn_stats:
         overflow_marker = "OVERFLOW!" if s["scores_overflow_fp16"] else ""
         raw_overflow = "raw>65k" if s["scores_raw_abs_max"] > FP16_MAX else ""
-        print(f"  {s['block']:>3d}   | {s['q_abs_max']:>10.1f} | {s['k_abs_max']:>10.1f} | "
-              f"{s['qkv_proj_abs_max']:>10.1f} | {s['scores_raw_abs_max']:>10.1f} | "
-              f"{s['scores_scaled_abs_max']:>10.1f} | {s['q_std']:>8.3f} | {raw_overflow} {overflow_marker}")
+        print(
+            f"  {s['block']:>3d}   | {s['q_abs_max']:>10.1f} | {s['k_abs_max']:>10.1f} | "
+            f"{s['qkv_proj_abs_max']:>10.1f} | {s['scores_raw_abs_max']:>10.1f} | "
+            f"{s['scores_scaled_abs_max']:>10.1f} | {s['q_std']:>8.3f} | {raw_overflow} {overflow_marker}"
+        )
 
     # Summary
     print("\n" + "=" * 80)
@@ -291,8 +306,10 @@ def main():
         else:
             print("  → QKV projection fits in FP16 too. Check MLP layers.")
     else:
-        print(f"\n  FINDING: Attention scores OVERFLOW FP16!")
-        print(f"  Need to scale Q or K by ~{(max_score_scaled / FP16_MAX):.1f}x to fix.")
+        print("\n  FINDING: Attention scores OVERFLOW FP16!")
+        print(
+            f"  Need to scale Q or K by ~{(max_score_scaled / FP16_MAX):.1f}x to fix."
+        )
 
 
 if __name__ == "__main__":

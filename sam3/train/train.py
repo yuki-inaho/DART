@@ -16,9 +16,9 @@ from hydra import compose, initialize_config_module
 from hydra.utils import instantiate
 from iopath.common.file_io import g_pathmgr
 from omegaconf import OmegaConf
-from sam3.train.utils.train_utils import makedir, register_omegaconf_resolvers
 from tqdm import tqdm
 
+from sam3.train.utils.train_utils import makedir, register_omegaconf_resolvers
 
 os.environ["HYDRA_FULL_ERROR"] = "1"
 
@@ -263,7 +263,7 @@ def main(args) -> None:
             jobs_runners_configs = []
             with executor.batch():
                 task_index = 0
-                for indices, main_port in tqdm(zip(job_indices, ports)):
+                for _indices, main_port in tqdm(zip(job_indices, ports)):
                     curr_cfg = deepcopy(cfg)
                     curr_cfg.submitit.job_array["task_index"] = task_index
                     curr_cfg_resolved = handle_custom_resolving(cfg)

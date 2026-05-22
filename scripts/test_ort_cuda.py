@@ -6,9 +6,7 @@ import sys
 import time
 
 # Add torch lib to DLL search path for cuDNN 9
-torch_lib = os.path.join(
-    sys.prefix, "Lib", "site-packages", "torch", "lib"
-)
+torch_lib = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
 if os.path.isdir(torch_lib):
     os.add_dll_directory(torch_lib)
 
@@ -25,19 +23,21 @@ try:
     sess = ort.InferenceSession(
         onnx_path,
         providers=[
-            ("TensorrtExecutionProvider", {
-                "device_id": 0,
-                "trt_fp16_enable": False,
-                "trt_engine_cache_enable": True,
-                "trt_engine_cache_path": "./ort_trt_cache",
-            }),
-        ]
+            (
+                "TensorrtExecutionProvider",
+                {
+                    "device_id": 0,
+                    "trt_fp16_enable": False,
+                    "trt_engine_cache_enable": True,
+                    "trt_engine_cache_path": "./ort_trt_cache",
+                },
+            ),
+        ],
     )
 except Exception as e:
     print(f"TRT provider failed: {e}")
     sess = ort.InferenceSession(
-        onnx_path,
-        providers=[("CUDAExecutionProvider", {"device_id": 0})]
+        onnx_path, providers=[("CUDAExecutionProvider", {"device_id": 0})]
     )
 print(f"Session created with: {sess.get_providers()}")
 

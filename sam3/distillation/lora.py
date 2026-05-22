@@ -33,8 +33,12 @@ class LoRALinear(nn.Module):
 
         # Create LoRA params on same device/dtype as original weight
         w = original.weight
-        self.lora_A = nn.Parameter(torch.empty(rank, original.in_features, device=w.device, dtype=w.dtype))
-        self.lora_B = nn.Parameter(torch.zeros(original.out_features, rank, device=w.device, dtype=w.dtype))
+        self.lora_A = nn.Parameter(
+            torch.empty(rank, original.in_features, device=w.device, dtype=w.dtype)
+        )
+        self.lora_B = nn.Parameter(
+            torch.zeros(original.out_features, rank, device=w.device, dtype=w.dtype)
+        )
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -64,8 +68,12 @@ class LoRAConv1x1(nn.Module):
 
         # Create LoRA params on same device/dtype as original weight
         w = original.weight
-        self.lora_A = nn.Parameter(torch.empty(rank, in_ch, 1, 1, device=w.device, dtype=w.dtype))
-        self.lora_B = nn.Parameter(torch.zeros(out_ch, rank, 1, 1, device=w.device, dtype=w.dtype))
+        self.lora_A = nn.Parameter(
+            torch.empty(rank, in_ch, 1, 1, device=w.device, dtype=w.dtype)
+        )
+        self.lora_B = nn.Parameter(
+            torch.zeros(out_ch, rank, 1, 1, device=w.device, dtype=w.dtype)
+        )
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

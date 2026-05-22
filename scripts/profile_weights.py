@@ -12,9 +12,10 @@ This script profiles:
 """
 
 import sys
-import torch
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -28,8 +29,10 @@ def profile_weight_stats(model):
     trunk = model.backbone.vision_backbone.trunk
 
     print("\n  Weight statistics for all ViT parameters:")
-    print(f"  {'Parameter':<55s} | {'Shape':>20s} | {'|max|':>8s} | {'std':>8s} | "
-          f"{'FP16 err':>10s} | {'Outliers':>8s}")
+    print(
+        f"  {'Parameter':<55s} | {'Shape':>20s} | {'|max|':>8s} | {'std':>8s} | "
+        f"{'FP16 err':>10s} | {'Outliers':>8s}"
+    )
     print("  " + "-" * 130)
 
     total_params = 0
@@ -43,7 +46,7 @@ def profile_weight_stats(model):
 
         abs_max = p.abs().max().item()
         std = p.std().item()
-        mean_fp16_err = fp16_err.mean().item()
+        fp16_err.mean().item()
         max_fp16_err = fp16_err.max().item()
 
         # Count "outliers" - values > 4*std
@@ -51,25 +54,29 @@ def profile_weight_stats(model):
         outlier_pct = outlier_count / p.numel() * 100
 
         # Flag if FP16 quantization error is large relative to values
-        rel_fp16_err = (fp16_err / p.abs().clamp(min=1e-6)).mean().item()
+        (fp16_err / p.abs().clamp(min=1e-6)).mean().item()
 
         shape_str = str(list(p.shape))
         total_params += p.numel()
         total_outliers += outlier_count
 
         # Only print noteworthy layers
-        if abs_max > 1.0 or outlier_pct > 1.0 or 'qkv' in name or 'proj' in name:
-            print(f"  {name:<55s} | {shape_str:>20s} | {abs_max:>8.3f} | {std:>8.4f} | "
-                  f"{max_fp16_err:>10.6f} | {outlier_pct:>7.2f}%")
+        if abs_max > 1.0 or outlier_pct > 1.0 or "qkv" in name or "proj" in name:
+            print(
+                f"  {name:<55s} | {shape_str:>20s} | {abs_max:>8.3f} | {std:>8.4f} | "
+                f"{max_fp16_err:>10.6f} | {outlier_pct:>7.2f}%"
+            )
 
         if abs_max > 5.0:
             problematic.append((name, abs_max, std, p.shape))
 
     print(f"\n  Total params: {total_params:,}")
-    print(f"  Total outliers (>4*std): {total_outliers:,} ({total_outliers/total_params*100:.3f}%)")
+    print(
+        f"  Total outliers (>4*std): {total_outliers:,} ({total_outliers / total_params * 100:.3f}%)"
+    )
 
     if problematic:
-        print(f"\n  Layers with |max| > 5:")
+        print("\n  Layers with |max| > 5:")
         for name, mx, std, shape in problematic:
             print(f"    {name}: |max|={mx:.3f}, std={std:.4f}, shape={list(shape)}")
 
@@ -81,8 +88,10 @@ def profile_attention_weight_properties(model):
     trunk = model.backbone.vision_backbone.trunk
 
     print("\n\n  Attention weight analysis (per block):")
-    print(f"  {'Block':>6s} | {'QKV |max|':>10s} | {'QKV std':>8s} | {'Proj |max|':>10s} | "
-          f"{'Proj std':>8s} | {'Q@K^T scale':>12s} | {'Softmax temp':>13s}")
+    print(
+        f"  {'Block':>6s} | {'QKV |max|':>10s} | {'QKV std':>8s} | {'Proj |max|':>10s} | "
+        f"{'Proj std':>8s} | {'Q@K^T scale':>12s} | {'Softmax temp':>13s}"
+    )
     print("  " + "-" * 90)
 
     for i, block in enumerate(trunk.blocks):
@@ -97,20 +106,22 @@ def profile_attention_weight_properties(model):
 
         # Q, K weight norms
         qkv_out = qkv_w.shape[0]
-        q_w = qkv_w[:qkv_out//3]
-        k_w = qkv_w[qkv_out//3:2*qkv_out//3]
+        q_w = qkv_w[: qkv_out // 3]
+        k_w = qkv_w[qkv_out // 3 : 2 * qkv_out // 3]
 
         # Frobenius norm per head
-        q_norms = q_w.reshape(attn.num_heads, head_dim, -1).norm(dim=(1,2))
-        k_norms = k_w.reshape(attn.num_heads, head_dim, -1).norm(dim=(1,2))
+        q_norms = q_w.reshape(attn.num_heads, head_dim, -1).norm(dim=(1, 2))
+        k_norms = k_w.reshape(attn.num_heads, head_dim, -1).norm(dim=(1, 2))
 
         # Expected Q@K^T magnitude (rough estimate)
         # score ~ (q_norm * k_norm / sqrt(dim_in)) * input_std * 1/sqrt(head_dim)
         est_score = (q_norms * k_norms).mean().item() / dim_in
 
-        print(f"  {i:>6d} | {qkv_w.abs().max().item():>10.4f} | {qkv_w.std().item():>8.5f} | "
-              f"{proj_w.abs().max().item():>10.4f} | {proj_w.std().item():>8.5f} | "
-              f"{est_score:>12.4f} | {1.0/head_dim**0.5:>13.4f}")
+        print(
+            f"  {i:>6d} | {qkv_w.abs().max().item():>10.4f} | {qkv_w.std().item():>8.5f} | "
+            f"{proj_w.abs().max().item():>10.4f} | {proj_w.std().item():>8.5f} | "
+            f"{est_score:>12.4f} | {1.0 / head_dim**0.5:>13.4f}"
+        )
 
 
 def test_qkv_fp16_sensitivity(model):
@@ -123,8 +134,10 @@ def test_qkv_fp16_sensitivity(model):
     dummy = torch.randn(1, 72, 72, 1024, device=DEVICE)  # Typical ViT input
 
     print("\n\n  QKV projection FP16 sensitivity (real weights, random input):")
-    print(f"  {'Block':>6s} | {'QKV cos(fp32,fp16)':>20s} | {'QKV max_diff':>12s} | "
-          f"{'Score cos':>10s} | {'Score max_diff':>14s} | {'Attn cos':>10s}")
+    print(
+        f"  {'Block':>6s} | {'QKV cos(fp32,fp16)':>20s} | {'QKV max_diff':>12s} | "
+        f"{'Score cos':>10s} | {'Score max_diff':>14s} | {'Attn cos':>10s}"
+    )
     print("  " + "-" * 100)
 
     with torch.inference_mode():
@@ -149,8 +162,12 @@ def test_qkv_fp16_sensitivity(model):
             num_heads = attn.num_heads
             head_dim = C // 3 // num_heads
 
-            qkv_r32 = qkv_fp32.reshape(B, H*W, 3, num_heads, head_dim).permute(2, 0, 3, 1, 4)
-            qkv_r16 = qkv_fp16.reshape(B, H*W, 3, num_heads, head_dim).permute(2, 0, 3, 1, 4)
+            qkv_r32 = qkv_fp32.reshape(B, H * W, 3, num_heads, head_dim).permute(
+                2, 0, 3, 1, 4
+            )
+            qkv_r16 = qkv_fp16.reshape(B, H * W, 3, num_heads, head_dim).permute(
+                2, 0, 3, 1, 4
+            )
 
             # Compute attention scores
             q32, k32 = qkv_r32[0], qkv_r32[1]
@@ -162,8 +179,12 @@ def test_qkv_fp16_sensitivity(model):
             q16_w = q16[:, :, :576, :]
             k16_w = k16[:, :, :576, :]
 
-            scores_fp32 = torch.matmul(q32_w.float(), k32_w.float().transpose(-2, -1)) * (head_dim ** -0.5)
-            scores_fp16 = torch.matmul(q16_w.half(), k16_w.half().transpose(-2, -1)).float() * (head_dim ** -0.5)
+            scores_fp32 = torch.matmul(
+                q32_w.float(), k32_w.float().transpose(-2, -1)
+            ) * (head_dim**-0.5)
+            scores_fp16 = torch.matmul(
+                q16_w.half(), k16_w.half().transpose(-2, -1)
+            ).float() * (head_dim**-0.5)
 
             score_cos = torch.nn.functional.cosine_similarity(
                 scores_fp32.flatten().unsqueeze(0),
@@ -179,8 +200,10 @@ def test_qkv_fp16_sensitivity(model):
                 attn_fp16.float().flatten().unsqueeze(0),
             ).item()
 
-            print(f"  {i:>6d} | {qkv_cos:>20.6f} | {qkv_diff:>12.4f} | "
-                  f"{score_cos:>10.6f} | {score_diff:>14.4f} | {attn_cos:>10.6f}")
+            print(
+                f"  {i:>6d} | {qkv_cos:>20.6f} | {qkv_diff:>12.4f} | "
+                f"{score_cos:>10.6f} | {score_diff:>14.4f} | {attn_cos:>10.6f}"
+            )
 
             # Run block for next iteration
             x = block(x)
@@ -197,8 +220,10 @@ def test_weight_condition_number(model):
     trunk = model.backbone.vision_backbone.trunk
 
     print("\n\n  Weight matrix condition numbers (higher = more FP16 sensitive):")
-    print(f"  {'Layer':<45s} | {'Cond(F32)':>12s} | {'|max|/|min|':>12s} | "
-          f"{'Spectral norm':>14s}")
+    print(
+        f"  {'Layer':<45s} | {'Cond(F32)':>12s} | {'|max|/|min|':>12s} | "
+        f"{'Spectral norm':>14s}"
+    )
     print("  " + "-" * 95)
 
     for i in [0, 7, 15, 23, 31]:  # Key blocks
@@ -206,7 +231,10 @@ def test_weight_condition_number(model):
         for name, param in [
             (f"block.{i}.attn.qkv", block.attn.qkv.weight),
             (f"block.{i}.attn.proj", block.attn.proj.weight),
-            (f"block.{i}.mlp.fc1", block.mlp.layers[0][0].weight if hasattr(block.mlp, 'layers') else None),
+            (
+                f"block.{i}.mlp.fc1",
+                block.mlp.layers[0][0].weight if hasattr(block.mlp, "layers") else None,
+            ),
         ]:
             if param is None:
                 continue
@@ -218,9 +246,11 @@ def test_weight_condition_number(model):
                     S = torch.linalg.svdvals(w)
                     cond = (S[0] / S[-1]).item()
                     spectral = S[0].item()
-                    min_sv = S[-1].item()
-                    print(f"  {name:<45s} | {cond:>12.1f} | {S[0].item()/S[-1].item():>12.1f} | "
-                          f"{spectral:>14.4f}")
+                    S[-1].item()
+                    print(
+                        f"  {name:<45s} | {cond:>12.1f} | {S[0].item() / S[-1].item():>12.1f} | "
+                        f"{spectral:>14.4f}"
+                    )
             except Exception as e:
                 print(f"  {name:<45s} | ERROR: {e}")
 
@@ -243,18 +273,30 @@ def test_real_vs_random_weights():
     head_dim = 64
     seq_len = 576  # Window size
 
-    print("\n\n  Real vs random weights in synthetic ONNX (seq=576, dim=1024, 16 heads):")
+    print(
+        "\n\n  Real vs random weights in synthetic ONNX (seq=576, dim=1024, 16 heads):"
+    )
 
     # Extract real weights
     qkv_w_real = attn.qkv.weight.data.float().cpu().numpy()  # [3072, 1024]
-    qkv_b_real = attn.qkv.bias.data.float().cpu().numpy() if attn.qkv.bias is not None else None
+    qkv_b_real = (
+        attn.qkv.bias.data.float().cpu().numpy() if attn.qkv.bias is not None else None
+    )
     proj_w_real = attn.proj.weight.data.float().cpu().numpy()  # [1024, 1024]
-    proj_b_real = attn.proj.bias.data.float().cpu().numpy() if attn.proj.bias is not None else None
+    proj_b_real = (
+        attn.proj.bias.data.float().cpu().numpy()
+        if attn.proj.bias is not None
+        else None
+    )
 
-    print(f"  QKV weight: shape={qkv_w_real.shape}, |max|={np.abs(qkv_w_real).max():.4f}, "
-          f"std={qkv_w_real.std():.5f}")
-    print(f"  Proj weight: shape={proj_w_real.shape}, |max|={np.abs(proj_w_real).max():.4f}, "
-          f"std={proj_w_real.std():.5f}")
+    print(
+        f"  QKV weight: shape={qkv_w_real.shape}, |max|={np.abs(qkv_w_real).max():.4f}, "
+        f"std={qkv_w_real.std():.5f}"
+    )
+    print(
+        f"  Proj weight: shape={proj_w_real.shape}, |max|={np.abs(proj_w_real).max():.4f}, "
+        f"std={proj_w_real.std():.5f}"
+    )
 
     def make_single_attn_onnx(output_path, qkv_w, proj_w, qkv_b=None, proj_b=None):
         """Make ONNX: LN -> QKV -> split -> attention -> proj -> residual."""
@@ -268,38 +310,71 @@ def test_real_vs_random_weights():
         X = helper.make_tensor_value_info("X", TensorProto.FLOAT, [1, seq_len, dim])
 
         # LayerNorm
-        initializers.append(helper.make_tensor("ln_w", TensorProto.FLOAT, [dim],
-                                               np.ones(dim, dtype=np.float32)))
-        initializers.append(helper.make_tensor("ln_b", TensorProto.FLOAT, [dim],
-                                               np.zeros(dim, dtype=np.float32)))
-        nodes.append(helper.make_node("LayerNormalization", ["X", "ln_w", "ln_b"], ["ln_out"],
-                                      axis=-1, epsilon=1e-6))
+        initializers.append(
+            helper.make_tensor(
+                "ln_w", TensorProto.FLOAT, [dim], np.ones(dim, dtype=np.float32)
+            )
+        )
+        initializers.append(
+            helper.make_tensor(
+                "ln_b", TensorProto.FLOAT, [dim], np.zeros(dim, dtype=np.float32)
+            )
+        )
+        nodes.append(
+            helper.make_node(
+                "LayerNormalization",
+                ["X", "ln_w", "ln_b"],
+                ["ln_out"],
+                axis=-1,
+                epsilon=1e-6,
+            )
+        )
 
         # QKV MatMul
-        initializers.append(helper.make_tensor("W_qkv", TensorProto.FLOAT,
-                                               list(qkv_w_t.shape), qkv_w_t.flatten()))
+        initializers.append(
+            helper.make_tensor(
+                "W_qkv", TensorProto.FLOAT, list(qkv_w_t.shape), qkv_w_t.flatten()
+            )
+        )
         qkv_name = "qkv_mm"
         nodes.append(helper.make_node("MatMul", ["ln_out", "W_qkv"], [qkv_name]))
 
         # Add bias if present
         if qkv_b is not None:
-            initializers.append(helper.make_tensor("qkv_bias", TensorProto.FLOAT,
-                                                   [3 * dim], qkv_b.flatten()))
-            nodes.append(helper.make_node("Add", [qkv_name, "qkv_bias"], ["qkv_biased"]))
+            initializers.append(
+                helper.make_tensor(
+                    "qkv_bias", TensorProto.FLOAT, [3 * dim], qkv_b.flatten()
+                )
+            )
+            nodes.append(
+                helper.make_node("Add", [qkv_name, "qkv_bias"], ["qkv_biased"])
+            )
             qkv_name = "qkv_biased"
 
         # Reshape to [1, seq_len, 3, num_heads, head_dim]
         shape_val = np.array([1, seq_len, 3, num_heads, head_dim], dtype=np.int64)
-        initializers.append(helper.make_tensor("shape_3hd", TensorProto.INT64, [5], shape_val))
-        nodes.append(helper.make_node("Reshape", [qkv_name, "shape_3hd"], ["qkv_reshaped"]))
+        initializers.append(
+            helper.make_tensor("shape_3hd", TensorProto.INT64, [5], shape_val)
+        )
+        nodes.append(
+            helper.make_node("Reshape", [qkv_name, "shape_3hd"], ["qkv_reshaped"])
+        )
 
         # Transpose to [3, 1, num_heads, seq_len, head_dim]
-        nodes.append(helper.make_node("Transpose", ["qkv_reshaped"], ["qkv_t"], perm=[2, 0, 3, 1, 4]))
+        nodes.append(
+            helper.make_node(
+                "Transpose", ["qkv_reshaped"], ["qkv_t"], perm=[2, 0, 3, 1, 4]
+            )
+        )
 
         # Split
         split_sizes = np.array([1, 1, 1], dtype=np.int64)
-        initializers.append(helper.make_tensor("split_sizes", TensorProto.INT64, [3], split_sizes))
-        nodes.append(helper.make_node("Split", ["qkv_t", "split_sizes"], ["q", "k", "v"], axis=0))
+        initializers.append(
+            helper.make_tensor("split_sizes", TensorProto.INT64, [3], split_sizes)
+        )
+        nodes.append(
+            helper.make_node("Split", ["qkv_t", "split_sizes"], ["q", "k", "v"], axis=0)
+        )
 
         # Squeeze
         axes = np.array([0], dtype=np.int64)
@@ -309,13 +384,15 @@ def test_real_vs_random_weights():
         nodes.append(helper.make_node("Squeeze", ["v", "axes"], ["v_sq"]))
 
         # K transpose
-        nodes.append(helper.make_node("Transpose", ["k_sq"], ["k_t"], perm=[0, 1, 3, 2]))
+        nodes.append(
+            helper.make_node("Transpose", ["k_sq"], ["k_t"], perm=[0, 1, 3, 2])
+        )
 
         # Q @ K^T
         nodes.append(helper.make_node("MatMul", ["q_sq", "k_t"], ["scores_raw"]))
 
         # Scale
-        scale = np.array([head_dim ** -0.5], dtype=np.float32)
+        scale = np.array([head_dim**-0.5], dtype=np.float32)
         initializers.append(helper.make_tensor("scale", TensorProto.FLOAT, [1], scale))
         nodes.append(helper.make_node("Mul", ["scores_raw", "scale"], ["scores"]))
 
@@ -326,21 +403,37 @@ def test_real_vs_random_weights():
         nodes.append(helper.make_node("MatMul", ["attn_w", "v_sq"], ["context"]))
 
         # Transpose back and reshape
-        nodes.append(helper.make_node("Transpose", ["context"], ["context_t"], perm=[0, 2, 1, 3]))
+        nodes.append(
+            helper.make_node("Transpose", ["context"], ["context_t"], perm=[0, 2, 1, 3])
+        )
         shape_flat = np.array([1, seq_len, dim], dtype=np.int64)
-        initializers.append(helper.make_tensor("shape_flat", TensorProto.INT64, [3], shape_flat))
-        nodes.append(helper.make_node("Reshape", ["context_t", "shape_flat"], ["context_flat"]))
+        initializers.append(
+            helper.make_tensor("shape_flat", TensorProto.INT64, [3], shape_flat)
+        )
+        nodes.append(
+            helper.make_node("Reshape", ["context_t", "shape_flat"], ["context_flat"])
+        )
 
         # Output projection
-        initializers.append(helper.make_tensor("W_proj", TensorProto.FLOAT,
-                                               list(proj_w_t.shape), proj_w_t.flatten()))
+        initializers.append(
+            helper.make_tensor(
+                "W_proj", TensorProto.FLOAT, list(proj_w_t.shape), proj_w_t.flatten()
+            )
+        )
         proj_name = "proj_mm"
-        nodes.append(helper.make_node("MatMul", ["context_flat", "W_proj"], [proj_name]))
+        nodes.append(
+            helper.make_node("MatMul", ["context_flat", "W_proj"], [proj_name])
+        )
 
         if proj_b is not None:
-            initializers.append(helper.make_tensor("proj_bias", TensorProto.FLOAT,
-                                                   [dim], proj_b.flatten()))
-            nodes.append(helper.make_node("Add", [proj_name, "proj_bias"], ["proj_biased"]))
+            initializers.append(
+                helper.make_tensor(
+                    "proj_bias", TensorProto.FLOAT, [dim], proj_b.flatten()
+                )
+            )
+            nodes.append(
+                helper.make_node("Add", [proj_name, "proj_bias"], ["proj_biased"])
+            )
             proj_name = "proj_biased"
 
         # Residual
@@ -356,7 +449,9 @@ def test_real_vs_random_weights():
         import tensorrt as trt
 
         builder = trt.Builder(trt.Logger(trt.Logger.WARNING))
-        network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+        network = builder.create_network(
+            1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        )
         parser = trt.OnnxParser(network, trt.Logger(trt.Logger.WARNING))
         with open(onnx_path, "rb") as f:
             if not parser.parse(f.read()):
@@ -404,7 +499,7 @@ def test_real_vs_random_weights():
             qkv = qkv.reshape(B, S, 3, num_heads, head_dim).permute(2, 0, 3, 1, 4)
             q, k, v = qkv[0], qkv[1], qkv[2]
 
-            scores = torch.matmul(q, k.transpose(-2, -1)) * (head_dim ** -0.5)
+            scores = torch.matmul(q, k.transpose(-2, -1)) * (head_dim**-0.5)
             attn_weights = torch.softmax(scores, dim=-1)
             ctx = torch.matmul(attn_weights, v)
             ctx = ctx.transpose(1, 2).reshape(B, S, dim)
@@ -425,21 +520,30 @@ def test_real_vs_random_weights():
     X = torch.randn(1, seq_len, dim, device=DEVICE)
 
     # Test with real weights
-    make_single_attn_onnx("test_real_weights.onnx", qkv_w_real, proj_w_real,
-                          qkv_b_real, proj_b_real)
+    make_single_attn_onnx(
+        "test_real_weights.onnx", qkv_w_real, proj_w_real, qkv_b_real, proj_b_real
+    )
     run_trt_and_compare("test_real_weights.onnx", X, "Real SAM3 block 0 weights")
 
     # Test with random weights (same scale)
     np.random.seed(42)
-    qkv_w_rand = np.random.randn(*qkv_w_real.shape).astype(np.float32) * qkv_w_real.std()
-    proj_w_rand = np.random.randn(*proj_w_real.shape).astype(np.float32) * proj_w_real.std()
+    qkv_w_rand = (
+        np.random.randn(*qkv_w_real.shape).astype(np.float32) * qkv_w_real.std()
+    )
+    proj_w_rand = (
+        np.random.randn(*proj_w_real.shape).astype(np.float32) * proj_w_real.std()
+    )
     make_single_attn_onnx("test_rand_weights.onnx", qkv_w_rand, proj_w_rand)
     run_trt_and_compare("test_rand_weights.onnx", X, "Random weights (same scale)")
 
     # Test with scaled-down real weights
-    make_single_attn_onnx("test_scaled_weights.onnx", qkv_w_real * 0.5, proj_w_real * 0.5,
-                          qkv_b_real * 0.5 if qkv_b_real is not None else None,
-                          proj_b_real * 0.5 if proj_b_real is not None else None)
+    make_single_attn_onnx(
+        "test_scaled_weights.onnx",
+        qkv_w_real * 0.5,
+        proj_w_real * 0.5,
+        qkv_b_real * 0.5 if qkv_b_real is not None else None,
+        proj_b_real * 0.5 if proj_b_real is not None else None,
+    )
     run_trt_and_compare("test_scaled_weights.onnx", X, "Real weights * 0.5")
 
     # Test blocks from different depths
@@ -449,22 +553,40 @@ def test_real_vs_random_weights():
         attn = block.attn
         qkv_w = attn.qkv.weight.data.float().cpu().numpy()
         proj_w = attn.proj.weight.data.float().cpu().numpy()
-        qkv_b = attn.qkv.bias.data.float().cpu().numpy() if attn.qkv.bias is not None else None
-        proj_b = attn.proj.bias.data.float().cpu().numpy() if attn.proj.bias is not None else None
+        qkv_b = (
+            attn.qkv.bias.data.float().cpu().numpy()
+            if attn.qkv.bias is not None
+            else None
+        )
+        proj_b = (
+            attn.proj.bias.data.float().cpu().numpy()
+            if attn.proj.bias is not None
+            else None
+        )
 
-        make_single_attn_onnx(f"test_block{block_idx}.onnx", qkv_w, proj_w, qkv_b, proj_b)
-        run_trt_and_compare(f"test_block{block_idx}.onnx", X, f"Block {block_idx} real weights")
+        make_single_attn_onnx(
+            f"test_block{block_idx}.onnx", qkv_w, proj_w, qkv_b, proj_b
+        )
+        run_trt_and_compare(
+            f"test_block{block_idx}.onnx", X, f"Block {block_idx} real weights"
+        )
         Path(f"test_block{block_idx}.onnx").unlink(missing_ok=True)
 
     # Cleanup
-    for f in ["test_real_weights.onnx", "test_rand_weights.onnx", "test_scaled_weights.onnx"]:
+    for f in [
+        "test_real_weights.onnx",
+        "test_rand_weights.onnx",
+        "test_scaled_weights.onnx",
+    ]:
         Path(f).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
 
     print("\n" + "=" * 80)

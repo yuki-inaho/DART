@@ -12,15 +12,13 @@ This implementation is self-contained with no external tracker dependencies.
 Kalman predict/update and IoU computations are fully vectorized with numpy.
 """
 
-from typing import List, Tuple
-
 import numpy as np
 from scipy.optimize import linear_sum_assignment
-
 
 # ---------------------------------------------------------------------------
 # Vectorized Kalman filter (constant-velocity model for bounding boxes)
 # ---------------------------------------------------------------------------
+
 
 class KalmanFilter:
     """Kalman filter for axis-aligned bounding box tracking.
@@ -54,7 +52,7 @@ class KalmanFilter:
         # Precomputed identity matrices
         self._I8 = np.eye(8, dtype=np.float64)
 
-    def initiate(self, measurement: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def initiate(self, measurement: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Create initial state from measurement [cx, cy, w, h]."""
         mean = np.zeros(8, dtype=np.float64)
         mean[:4] = measurement
@@ -62,16 +60,24 @@ class KalmanFilter:
         w, h = measurement[2], measurement[3]
         p = self._std_weight_position
         v = self._std_weight_velocity
-        std = np.array([
-            2 * p * w, 2 * p * h, 2 * p * w, 2 * p * h,
-            10 * v * w, 10 * v * h, 10 * v * w, 10 * v * h,
-        ])
+        std = np.array(
+            [
+                2 * p * w,
+                2 * p * h,
+                2 * p * w,
+                2 * p * h,
+                10 * v * w,
+                10 * v * h,
+                10 * v * w,
+                10 * v * h,
+            ]
+        )
         covariance = np.diag(std * std)
         return mean, covariance
 
     def predict_batch(
         self, means: np.ndarray, covariances: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Predict next state for N tracks.
 
         Args:
@@ -87,16 +93,24 @@ class KalmanFilter:
         hs = means[:, 3]  # (N,)
 
         # Process noise Q: diagonal (N, 8, 8)
-        stds = np.column_stack([
-            p * ws, p * hs, p * ws, p * hs,
-            v * ws, v * hs, v * ws, v * hs,
-        ])  # (N, 8)
+        stds = np.column_stack(
+            [
+                p * ws,
+                p * hs,
+                p * ws,
+                p * hs,
+                v * ws,
+                v * hs,
+                v * ws,
+                v * hs,
+            ]
+        )  # (N, 8)
         Q = np.zeros((len(means), 8, 8), dtype=np.float64)
         diag_idx = np.arange(8)
         Q[:, diag_idx, diag_idx] = stds * stds
 
         # Batch predict: mean_new = mean @ F.T, cov_new = F @ cov @ F.T + Q
-        new_means = means @ self.FT           # (N, 8)
+        new_means = means @ self.FT  # (N, 8)
         temp = np.matmul(self.F, covariances)  # (N, 8, 8)
         new_covs = np.matmul(temp, self.FT) + Q
 
@@ -107,7 +121,7 @@ class KalmanFilter:
         means: np.ndarray,
         covariances: np.ndarray,
         measurements: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Kalman update for M matched tracks.
 
         Args:
@@ -162,6 +176,7 @@ class KalmanFilter:
 # Single track
 # ---------------------------------------------------------------------------
 
+
 class STrack:
     """Represents a single tracked object."""
 
@@ -183,7 +198,7 @@ class STrack:
         h = box_xyxy[3] - box_xyxy[1]
         self._measurement = np.array([cx, cy, w, h], dtype=np.float64)
 
-        self.mean = None       # set by tracker after initiate
+        self.mean = None  # set by tracker after initiate
         self.covariance = None
 
         self.track_id = 0
@@ -196,10 +211,15 @@ class STrack:
     def box_xyxy(self) -> np.ndarray:
         """Current bounding box in [x1, y1, x2, y2] format."""
         cx, cy, w, h = self.mean[0], self.mean[1], self.mean[2], self.mean[3]
-        return np.array([
-            cx - w * 0.5, cy - h * 0.5,
-            cx + w * 0.5, cy + h * 0.5,
-        ], dtype=np.float32)
+        return np.array(
+            [
+                cx - w * 0.5,
+                cy - h * 0.5,
+                cx + w * 0.5,
+                cy + h * 0.5,
+            ],
+            dtype=np.float32,
+        )
 
     def activate(self, frame_id: int) -> None:
         self.track_id = STrack._next_id
@@ -212,9 +232,7 @@ class STrack:
     def _update_class(self, det_class: int, det_score: float) -> None:
         for k in self.class_scores:
             self.class_scores[k] *= self._class_decay
-        self.class_scores[det_class] = (
-            self.class_scores.get(det_class, 0.0) + det_score
-        )
+        self.class_scores[det_class] = self.class_scores.get(det_class, 0.0) + det_score
         self.class_id = max(self.class_scores, key=self.class_scores.get)
 
     def apply_update(
@@ -236,6 +254,7 @@ class STrack:
 # ---------------------------------------------------------------------------
 # IoU and NMS
 # ---------------------------------------------------------------------------
+
 
 def _iou_batch(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
     """Compute IoU between two sets of xyxy boxes. (M,4) x (N,4) -> (M,N)."""
@@ -294,7 +313,9 @@ def nms_class_agnostic(
         iy2 = np.minimum(boxes[i, 3], boxes[order, 3])
         inter = np.maximum(ix2 - ix1, 0) * np.maximum(iy2 - iy1, 0)
         area_i = (boxes[i, 2] - boxes[i, 0]) * (boxes[i, 3] - boxes[i, 1])
-        area_j = (boxes[order, 2] - boxes[order, 0]) * (boxes[order, 3] - boxes[order, 1])
+        area_j = (boxes[order, 2] - boxes[order, 0]) * (
+            boxes[order, 3] - boxes[order, 1]
+        )
         iou = inter / np.maximum(area_i + area_j - inter, 1e-6)
         suppressed[order[iou >= iou_threshold]] = True
         suppressed[i] = False  # keep self
@@ -304,7 +325,7 @@ def nms_class_agnostic(
 
 def _linear_assignment(
     cost_matrix: np.ndarray, thresh: float
-) -> Tuple[list, list, list]:
+) -> tuple[list, list, list]:
     """Solve linear assignment with IoU threshold.
 
     Returns (matches, unmatched_a, unmatched_b).
@@ -338,6 +359,7 @@ def _linear_assignment(
 # Helpers to vectorize track state access
 # ---------------------------------------------------------------------------
 
+
 def _get_boxes(tracks: list) -> np.ndarray:
     """Extract (N, 4) xyxy boxes from a list of STracks."""
     if not tracks:
@@ -349,7 +371,7 @@ def _get_boxes(tracks: list) -> np.ndarray:
     return np.hstack([xy1, xy2]).astype(np.float32)
 
 
-def _stack_states(tracks: list) -> Tuple[np.ndarray, np.ndarray]:
+def _stack_states(tracks: list) -> tuple[np.ndarray, np.ndarray]:
     """Stack (N,8) means and (N,8,8) covariances from a track list."""
     means = np.array([t.mean for t in tracks])
     covs = np.array([t.covariance for t in tracks])
@@ -366,6 +388,7 @@ def _write_states(tracks: list, means: np.ndarray, covs: np.ndarray) -> None:
 # ---------------------------------------------------------------------------
 # BYTETracker
 # ---------------------------------------------------------------------------
+
 
 class BYTETracker:
     """ByteTrack multi-object tracker with vectorized Kalman operations.
@@ -415,8 +438,8 @@ class BYTETracker:
         self.kalman = KalmanFilter()
         self.frame_id = 0
 
-        self.tracked_stracks: List[STrack] = []
-        self.lost_stracks: List[STrack] = []
+        self.tracked_stracks: list[STrack] = []
+        self.lost_stracks: list[STrack] = []
 
     def reset(self):
         self.frame_id = 0
@@ -458,7 +481,7 @@ class BYTETracker:
         boxes: np.ndarray,
         scores: np.ndarray,
         class_ids: np.ndarray,
-    ) -> List[STrack]:
+    ) -> list[STrack]:
         """Process one frame of detections.
 
         Args:
@@ -474,7 +497,9 @@ class BYTETracker:
 
         # ---- Optional class-agnostic NMS preprocessing ----
         if self.class_agnostic_nms_thresh < 1.0 and len(scores) > 0:
-            keep = nms_class_agnostic(boxes, scores, class_ids, self.class_agnostic_nms_thresh)
+            keep = nms_class_agnostic(
+                boxes, scores, class_ids, self.class_agnostic_nms_thresh
+            )
             boxes = boxes[keep]
             scores = scores[keep]
             class_ids = class_ids[keep]
@@ -530,21 +555,25 @@ class BYTETracker:
             det_boxes_matched = high_boxes[matched_dets_idx]  # (K, 4)
 
             # Convert xyxy detections to cxcywh measurements
-            meas = np.column_stack([
-                (det_boxes_matched[:, 0] + det_boxes_matched[:, 2]) * 0.5,
-                (det_boxes_matched[:, 1] + det_boxes_matched[:, 3]) * 0.5,
-                det_boxes_matched[:, 2] - det_boxes_matched[:, 0],
-                det_boxes_matched[:, 3] - det_boxes_matched[:, 1],
-            ])  # (K, 4)
+            meas = np.column_stack(
+                [
+                    (det_boxes_matched[:, 0] + det_boxes_matched[:, 2]) * 0.5,
+                    (det_boxes_matched[:, 1] + det_boxes_matched[:, 3]) * 0.5,
+                    det_boxes_matched[:, 2] - det_boxes_matched[:, 0],
+                    det_boxes_matched[:, 3] - det_boxes_matched[:, 1],
+                ]
+            )  # (K, 4)
 
             m_means, m_covs = _stack_states(matched_tracks)
             m_means, m_covs = self.kalman.update_batch(m_means, m_covs, meas)
             _write_states(matched_tracks, m_means, m_covs)
 
-            for i, (t_idx, d_idx) in enumerate(matches):
+            for _i, (t_idx, d_idx) in enumerate(matches):
                 tracked_pool[t_idx].apply_update(
-                    high_boxes[d_idx], float(high_scores[d_idx]),
-                    int(high_classes[d_idx]), self.frame_id,
+                    high_boxes[d_idx],
+                    float(high_scores[d_idx]),
+                    int(high_classes[d_idx]),
+                    self.frame_id,
                 )
 
         remaining_tracked = [tracked_pool[i] for i in unmatched_tracks]
@@ -566,20 +595,24 @@ class BYTETracker:
             matched_tracks2 = [remaining_tracked[t] for t, _ in matches2]
             det_idx2 = [d for _, d in matches2]
             det_boxes2 = low_boxes[det_idx2]
-            meas2 = np.column_stack([
-                (det_boxes2[:, 0] + det_boxes2[:, 2]) * 0.5,
-                (det_boxes2[:, 1] + det_boxes2[:, 3]) * 0.5,
-                det_boxes2[:, 2] - det_boxes2[:, 0],
-                det_boxes2[:, 3] - det_boxes2[:, 1],
-            ])
+            meas2 = np.column_stack(
+                [
+                    (det_boxes2[:, 0] + det_boxes2[:, 2]) * 0.5,
+                    (det_boxes2[:, 1] + det_boxes2[:, 3]) * 0.5,
+                    det_boxes2[:, 2] - det_boxes2[:, 0],
+                    det_boxes2[:, 3] - det_boxes2[:, 1],
+                ]
+            )
             m2_means, m2_covs = _stack_states(matched_tracks2)
             m2_means, m2_covs = self.kalman.update_batch(m2_means, m2_covs, meas2)
             _write_states(matched_tracks2, m2_means, m2_covs)
 
-            for i, (t_idx, d_idx) in enumerate(matches2):
+            for _i, (t_idx, d_idx) in enumerate(matches2):
                 remaining_tracked[t_idx].apply_update(
-                    low_boxes[d_idx], float(low_scores[d_idx]),
-                    int(low_classes[d_idx]), self.frame_id,
+                    low_boxes[d_idx],
+                    float(low_scores[d_idx]),
+                    int(low_classes[d_idx]),
+                    self.frame_id,
                 )
 
         newly_lost = [remaining_tracked[i] for i in unmatched_tracks2]
@@ -597,21 +630,25 @@ class BYTETracker:
                 matched_lost = [lost_pool[t] for t, _ in matches3]
                 det_idx3 = [remaining_high_dets[d] for _, d in matches3]
                 det_boxes3 = high_boxes[det_idx3]
-                meas3 = np.column_stack([
-                    (det_boxes3[:, 0] + det_boxes3[:, 2]) * 0.5,
-                    (det_boxes3[:, 1] + det_boxes3[:, 3]) * 0.5,
-                    det_boxes3[:, 2] - det_boxes3[:, 0],
-                    det_boxes3[:, 3] - det_boxes3[:, 1],
-                ])
+                meas3 = np.column_stack(
+                    [
+                        (det_boxes3[:, 0] + det_boxes3[:, 2]) * 0.5,
+                        (det_boxes3[:, 1] + det_boxes3[:, 3]) * 0.5,
+                        det_boxes3[:, 2] - det_boxes3[:, 0],
+                        det_boxes3[:, 3] - det_boxes3[:, 1],
+                    ]
+                )
                 m3_means, m3_covs = _stack_states(matched_lost)
                 m3_means, m3_covs = self.kalman.update_batch(m3_means, m3_covs, meas3)
                 _write_states(matched_lost, m3_means, m3_covs)
 
-                for i, (t_idx, d_idx) in enumerate(matches3):
+                for _i, (t_idx, d_idx) in enumerate(matches3):
                     real_d_idx = remaining_high_dets[d_idx]
                     lost_pool[t_idx].apply_update(
-                        high_boxes[real_d_idx], float(high_scores[real_d_idx]),
-                        int(high_classes[real_d_idx]), self.frame_id,
+                        high_boxes[real_d_idx],
+                        float(high_scores[real_d_idx]),
+                        int(high_classes[real_d_idx]),
+                        self.frame_id,
                     )
                     refound_stracks.append(lost_pool[t_idx])
 
@@ -620,7 +657,8 @@ class BYTETracker:
         # ---- Initialize new tracks ----
         for d_idx in remaining_high_dets:
             track = STrack(
-                high_boxes[d_idx], float(high_scores[d_idx]),
+                high_boxes[d_idx],
+                float(high_scores[d_idx]),
                 int(high_classes[d_idx]),
             )
             track.mean, track.covariance = self.kalman.initiate(track._measurement)
@@ -628,17 +666,17 @@ class BYTETracker:
             activated_stracks.append(track)
 
         # ---- Update track lists ----
-        refound_set = set(id(t) for t in refound_stracks)
+        refound_set = {id(t) for t in refound_stracks}
 
         self.tracked_stracks = [
-            t for t in self.tracked_stracks
-            if t.frame_id == self.frame_id
+            t for t in self.tracked_stracks if t.frame_id == self.frame_id
         ]
         self.tracked_stracks.extend(refound_stracks)
         self.tracked_stracks.extend(activated_stracks)
 
         self.lost_stracks = [
-            t for t in self.lost_stracks
+            t
+            for t in self.lost_stracks
             if id(t) not in refound_set
             and (self.frame_id - t.frame_id) <= self.max_time_lost
         ]
@@ -649,6 +687,7 @@ class BYTETracker:
 
         # ---- Output ----
         return [
-            t for t in self.tracked_stracks
+            t
+            for t in self.tracked_stracks
             if t.is_activated and t.tracklet_len >= self.min_hits
         ]

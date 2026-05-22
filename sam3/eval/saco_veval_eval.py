@@ -7,6 +7,7 @@ import os
 from collections import defaultdict
 
 from iopath.common.file_io import g_pathmgr
+
 from sam3.eval.saco_veval_evaluators import (
     VideoCGF1Evaluator,
     VideoPhraseApEvaluator,

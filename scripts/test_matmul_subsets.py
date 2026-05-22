@@ -15,8 +15,9 @@ Tests each subset individually and in combinations.
 import re
 import sys
 import time
-import torch
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -29,10 +30,10 @@ DEVICE = "cuda"
 
 # Name patterns for MatMul groups
 PATTERNS = {
-    "qkv":     re.compile(r"/attn/qkv/MatMul$"),
-    "attn_qk": re.compile(r"/attn/MatMul$"),       # Q@K^T only
-    "attn_v":  re.compile(r"/attn/MatMul_1$"),      # attn@V only
-    "proj":    re.compile(r"/attn/proj/MatMul$"),
+    "qkv": re.compile(r"/attn/qkv/MatMul$"),
+    "attn_qk": re.compile(r"/attn/MatMul$"),  # Q@K^T only
+    "attn_v": re.compile(r"/attn/MatMul_1$"),  # attn@V only
+    "proj": re.compile(r"/attn/proj/MatMul$"),
     "mlp_fc1": re.compile(r"/mlp/fc1/MatMul$"),
     "mlp_fc2": re.compile(r"/mlp/fc2/MatMul$"),
 }
@@ -59,10 +60,24 @@ def build_and_test(fp32_groups, label):
 
     skip_types = set()
     for name in (
-        "SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-        "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-        "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-        "NON_ZERO", "ONE_HOT", "GRID_SAMPLE",
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
     ):
         if hasattr(trt.LayerType, name):
             skip_types.add(getattr(trt.LayerType, name))
@@ -86,7 +101,9 @@ def build_and_test(fp32_groups, label):
                 force_fp32 = True
             else:
                 for group_name in fp32_groups:
-                    if group_name in PATTERNS and PATTERNS[group_name].search(layer.name):
+                    if group_name in PATTERNS and PATTERNS[group_name].search(
+                        layer.name
+                    ):
                         force_fp32 = True
                         break
 
@@ -115,7 +132,9 @@ def build_and_test(fp32_groups, label):
     from sam3.trt.trt_backbone import TRTBackbone
 
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     backbone = model.backbone
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
@@ -126,7 +145,9 @@ def build_and_test(fp32_groups, label):
 
     pos_module = backbone.vision_backbone.position_encoding
     trt_bb = TRTBackbone(
-        engine_path=engine_path, device=DEVICE, pos_encoding_module=pos_module,
+        engine_path=engine_path,
+        device=DEVICE,
+        pos_encoding_module=pos_module,
     )
 
     with torch.inference_mode():
@@ -150,7 +171,9 @@ def build_and_test(fp32_groups, label):
         ms = (time.perf_counter() - t0) / 50 * 1000
 
     status = "OK" if cos_last > 0.99 else "BROKEN"
-    print(f"  {label:40s} | fp32={fp32_count:3d} | cos={cos_last:.4f} | {ms:.1f}ms | {status} | build={build_time:.0f}s")
+    print(
+        f"  {label:40s} | fp32={fp32_count:3d} | cos={cos_last:.4f} | {ms:.1f}ms | {status} | build={build_time:.0f}s"
+    )
 
     del trt_bb, model, backbone
     torch.cuda.empty_cache()
@@ -161,20 +184,22 @@ def build_and_test(fp32_groups, label):
 
 
 def main():
-    print(f"{'Config':42s} | {'FP32':>5s} | {'Cosine':>8s} | {'Speed':>6s} | Status | Build")
+    print(
+        f"{'Config':42s} | {'FP32':>5s} | {'Cosine':>8s} | {'Speed':>6s} | Status | Build"
+    )
     print("-" * 100)
 
     # Test individual groups
     tests = [
         # Individual groups (with softmax always FP32)
-        (["softmax"],                                           "softmax_only"),
-        (["softmax", "attn_qk"],                                "softmax+attn_qk"),
-        (["softmax", "attn_qk", "attn_v"],                     "softmax+attn"),
-        (["softmax", "attn_qk", "attn_v", "qkv"],              "softmax+attn+qkv"),
-        (["softmax", "attn_qk", "attn_v", "qkv", "proj"],      "softmax+attn+qkv+proj"),
-        (["softmax", "mlp_fc1", "mlp_fc2"],                     "softmax+mlp"),
+        (["softmax"], "softmax_only"),
+        (["softmax", "attn_qk"], "softmax+attn_qk"),
+        (["softmax", "attn_qk", "attn_v"], "softmax+attn"),
+        (["softmax", "attn_qk", "attn_v", "qkv"], "softmax+attn+qkv"),
+        (["softmax", "attn_qk", "attn_v", "qkv", "proj"], "softmax+attn+qkv+proj"),
+        (["softmax", "mlp_fc1", "mlp_fc2"], "softmax+mlp"),
         (["softmax", "attn_qk", "attn_v", "mlp_fc1", "mlp_fc2"], "softmax+attn+mlp"),
-        (["softmax", "all_matmul"],                              "softmax+all_matmul"),
+        (["softmax", "all_matmul"], "softmax+all_matmul"),
     ]
 
     for groups, label in tests:

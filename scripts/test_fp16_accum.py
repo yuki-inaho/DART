@@ -13,8 +13,9 @@ Tests:
 
 import sys
 import time
-import torch
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -45,13 +46,13 @@ def build_fp16(onnx_path, output_path, opt_level=3):
 
     t0 = time.time()
     engine_bytes = builder.build_serialized_network(network, config)
-    print(f"  Build time: {time.time()-t0:.0f}s")
+    print(f"  Build time: {time.time() - t0:.0f}s")
 
     if engine_bytes is None:
         raise RuntimeError("Engine build failed")
     with open(output_path, "wb") as f:
         f.write(engine_bytes)
-    print(f"  Saved: {output_path} ({Path(output_path).stat().st_size/1e6:.0f} MB)")
+    print(f"  Saved: {output_path} ({Path(output_path).stat().st_size / 1e6:.0f} MB)")
 
 
 def test_engine(engine_path, label, model, dummy):
@@ -65,7 +66,9 @@ def test_engine(engine_path, label, model, dummy):
 
     pos_module = backbone.vision_backbone.position_encoding
     trt_bb = TRTBackbone(
-        engine_path=engine_path, device=DEVICE, pos_encoding_module=pos_module,
+        engine_path=engine_path,
+        device=DEVICE,
+        pos_encoding_module=pos_module,
     )
 
     with torch.inference_mode():
@@ -91,7 +94,9 @@ def test_engine(engine_path, label, model, dummy):
         torch.cuda.synchronize()
         ms = (time.perf_counter() - t0) / 50 * 1000
 
-    print(f"  {label:35s} | cos=[{cos[0]:.4f}, {cos[1]:.4f}, {cos[2]:.4f}] | {ms:.1f}ms")
+    print(
+        f"  {label:35s} | cos=[{cos[0]:.4f}, {cos[1]:.4f}, {cos[2]:.4f}] | {ms:.1f}ms"
+    )
     del trt_bb
     torch.cuda.empty_cache()
 
@@ -122,10 +127,12 @@ def test_matmul_accum():
     max_diff = (C_fp32 - C_fp16.float()).abs().max().item()
     rel = ((C_fp32 - C_fp16.float()).abs() / C_fp32.abs().clamp(min=1e-6)).mean().item()
 
-    print(f"    PyTorch FP16 MatMul (5184x1024 @ 1024x3072):")
+    print("    PyTorch FP16 MatMul (5184x1024 @ 1024x3072):")
     print(f"      cosine={cos:.6f}, max_diff={max_diff:.4f}, mean_rel_err={rel:.6f}")
-    print(f"      Result range: FP32=[{C_fp32.min().item():.1f}, {C_fp32.max().item():.1f}], "
-          f"FP16=[{C_fp16.float().min().item():.1f}, {C_fp16.float().max().item():.1f}]")
+    print(
+        f"      Result range: FP32=[{C_fp32.min().item():.1f}, {C_fp32.max().item():.1f}], "
+        f"FP16=[{C_fp16.float().min().item():.1f}, {C_fp16.float().max().item():.1f}]"
+    )
 
     # Test with different reduction dimensions
     print("\n    MatMul precision vs reduction dimension:")
@@ -150,7 +157,9 @@ def main():
 
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -168,7 +177,9 @@ def main():
     build_fp16(ONNX_PATH, "backbone_fp16_opt0.engine", opt_level=0)
     build_fp16(ONNX_PATH, "backbone_fp16_opt3.engine", opt_level=3)
 
-    test_engine("backbone_fp16_opt0.engine", "FP16 opt_level=0 (no fusion)", model, dummy)
+    test_engine(
+        "backbone_fp16_opt0.engine", "FP16 opt_level=0 (no fusion)", model, dummy
+    )
     test_engine("backbone_fp16_opt3.engine", "FP16 opt_level=3 (normal)", model, dummy)
 
     print("\nDone!")

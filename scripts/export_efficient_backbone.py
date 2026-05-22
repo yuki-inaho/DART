@@ -40,10 +40,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sam3.efficient_backbone import build_efficientsam3_model
 
-
 # Variant configs: (backbone_type, model_name, checkpoint_filename, display_name)
 VARIANTS = {
-    "efficientvit": ("efficientvit", "b1", "efficient_sam3_efficientvit_m_geo_ft.pt", "EfficientViT-B1"),
+    "efficientvit": (
+        "efficientvit",
+        "b1",
+        "efficient_sam3_efficientvit_m_geo_ft.pt",
+        "EfficientViT-B1",
+    ),
     "repvit": ("repvit", "m2.3", "efficient_sam3_repvit_l.pt", "RepViT-M2.3"),
     "tinyvit": ("tinyvit", "11m", "efficient_sam3_tinyvit_m_geo_ft.pt", "TinyViT-11M"),
 }
@@ -65,7 +69,7 @@ class EfficientBackboneForExport(nn.Module):
         # trunk expects list of images, returns list of feature maps
         # Then FPN neck is applied
         # vision_backbone is Sam3DualViTDetNeck
-        sam3_out, sam3_pos, _, _ = self.vision_backbone([pixel_values])
+        sam3_out, _sam3_pos, _, _ = self.vision_backbone([pixel_values])
         # Drop the 4th level (0.5x) — downstream uses first 3 only
         return sam3_out[0], sam3_out[1], sam3_out[2]
 
@@ -93,7 +97,11 @@ def export_onnx(model, variant_name, imgsz, output_dir):
     export_output = torch.onnx.export(wrapper, (dummy,), dynamo=True)
     export_output.save(onnx_path)
     dt = time.perf_counter() - t0
-    total_size = sum(f.stat().st_size for f in out_path.iterdir() if f.name.startswith(f"efficient_{variant_name}"))
+    total_size = sum(
+        f.stat().st_size
+        for f in out_path.iterdir()
+        if f.name.startswith(f"efficient_{variant_name}")
+    )
     print(f"  Export done ({dt:.1f}s), total ONNX size: {total_size / 1e6:.0f} MB")
 
     return onnx_path
@@ -147,7 +155,9 @@ def build_trt_engine(onnx_path, output_path):
     with open(output_path, "wb") as f:
         f.write(serialized)
     size_mb = Path(output_path).stat().st_size / 1e6
-    print(f"  Done ({time.perf_counter() - t0:.0f}s), {size_mb:.0f} MB -> {output_path}")
+    print(
+        f"  Done ({time.perf_counter() - t0:.0f}s), {size_mb:.0f} MB -> {output_path}"
+    )
     return output_path
 
 
@@ -175,7 +185,7 @@ def run_trt_engine(engine_path, pixel_values):
         shape = engine.get_tensor_shape(name)
         dtype = _trt_to_torch.get(engine.get_tensor_dtype(name), torch.float32)
         mode = engine.get_tensor_mode(name)
-        is_input = (mode == trt.TensorIOMode.INPUT)
+        is_input = mode == trt.TensorIOMode.INPUT
 
         if is_input:
             buf = pixel_values.to(dtype=dtype, device="cuda").contiguous()
@@ -220,8 +230,14 @@ def cosine(a, b):
 
 
 def process_variant(
-    variant_key, ckpt_dir, image_path, imgsz, output_dir,
-    skip_export, skip_build, benchmark_only,
+    variant_key,
+    ckpt_dir,
+    image_path,
+    imgsz,
+    output_dir,
+    skip_export,
+    skip_build,
+    benchmark_only,
 ):
     """Full pipeline for one EfficientSAM3 variant."""
     backbone_type, model_name, ckpt_file, display_name = VARIANTS[variant_key]
@@ -231,9 +247,9 @@ def process_variant(
         print(f"\nSkipping {display_name}: {ckpt_path} not found")
         return None
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Variant: {display_name} ({variant_key})")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     engine_path = os.path.join(output_dir, f"efficient_{variant_key}_fp16.engine")
     onnx_dir = os.path.join(output_dir, f"onnx_efficient_{variant_key}")
@@ -248,9 +264,13 @@ def process_variant(
         eval_mode=True,
     )
 
-    backbone_params = sum(p.numel() for p in model.backbone.vision_backbone.trunk.parameters())
+    backbone_params = sum(
+        p.numel() for p in model.backbone.vision_backbone.trunk.parameters()
+    )
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"  Backbone params: {backbone_params/1e6:.1f}M, Total: {total_params/1e6:.1f}M")
+    print(
+        f"  Backbone params: {backbone_params / 1e6:.1f}M, Total: {total_params / 1e6:.1f}M"
+    )
 
     # Step 1: Export ONNX
     if not skip_export and not benchmark_only:
@@ -269,15 +289,17 @@ def process_variant(
     from PIL import Image
     from torchvision.transforms import v2
 
-    print(f"\nRunning PyTorch reference on CUDA...")
+    print("\nRunning PyTorch reference on CUDA...")
     model = model.cuda()
     image = Image.open(image_path).convert("RGB")
-    transform = v2.Compose([
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale=True),
-        v2.Resize(size=(imgsz, imgsz)),
-        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ])
+    transform = v2.Compose(
+        [
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Resize(size=(imgsz, imgsz)),
+            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
     pixel_values = transform(image).unsqueeze(0).cuda()
 
     wrapper = EfficientBackboneForExport(model.backbone.vision_backbone).cuda().eval()
@@ -317,9 +339,9 @@ def process_variant(
     trt_fpn, trt_ms = run_trt_engine(engine_path, pixel_values_for_trt)
 
     # Compare
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"QUALITY: {display_name} TRT FP16 vs PyTorch")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for i in range(min(3, len(trt_fpn))):
         ref = ref_fpn[i]
         trt_out = trt_fpn[i]
@@ -331,8 +353,8 @@ def process_variant(
     print(f"\n  PyTorch: {pytorch_ms:.1f}ms")
     print(f"  TRT FP16: {trt_ms:.1f}ms")
     print(f"  Speedup: {pytorch_ms / trt_ms:.1f}x")
-    print(f"  Backbone params: {backbone_params/1e6:.1f}M")
-    print(f"{'='*60}")
+    print(f"  Backbone params: {backbone_params / 1e6:.1f}M")
+    print(f"{'=' * 60}")
 
     return {
         "name": display_name,
@@ -344,12 +366,16 @@ def process_variant(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Export EfficientSAM3 backbone to TRT FP16")
+    parser = argparse.ArgumentParser(
+        description="Export EfficientSAM3 backbone to TRT FP16"
+    )
     parser.add_argument("--image", default="x.jpg", help="Test image")
     parser.add_argument("--imgsz", type=int, default=1008)
     parser.add_argument("--ckpt-dir", default="stage1_all_converted")
     parser.add_argument("--output-dir", default=".")
-    parser.add_argument("--variant", default="all", choices=["all"] + list(VARIANTS.keys()))
+    parser.add_argument(
+        "--variant", default="all", choices=["all", *list(VARIANTS.keys())]
+    )
     parser.add_argument("--skip-export", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--benchmark-only", action="store_true")
@@ -360,19 +386,27 @@ def main():
     results = []
     for v in variants:
         r = process_variant(
-            v, args.ckpt_dir, args.image, args.imgsz, args.output_dir,
-            args.skip_export, args.skip_build, args.benchmark_only,
+            v,
+            args.ckpt_dir,
+            args.image,
+            args.imgsz,
+            args.output_dir,
+            args.skip_export,
+            args.skip_build,
+            args.benchmark_only,
         )
         if r:
             results.append(r)
 
     # Summary
     if results:
-        print(f"\n\n{'='*80}")
+        print(f"\n\n{'=' * 80}")
         print("SUMMARY: EfficientSAM3 Backbone TRT FP16 Export")
-        print(f"{'='*80}")
-        print(f"  {'Model':<20s}  {'Params':>7s}  {'PyTorch':>9s}  {'TRT FP16':>9s}  {'Speedup':>7s}  {'Cos(fpn2)':>10s}")
-        print(f"  {'-'*76}")
+        print(f"{'=' * 80}")
+        print(
+            f"  {'Model':<20s}  {'Params':>7s}  {'PyTorch':>9s}  {'TRT FP16':>9s}  {'Speedup':>7s}  {'Cos(fpn2)':>10s}"
+        )
+        print(f"  {'-' * 76}")
         for r in results:
             trt_ms = r.get("trt_ms", 0)
             speedup = r["pytorch_ms"] / trt_ms if trt_ms > 0 else 0
@@ -382,7 +416,7 @@ def main():
                 f"{r['pytorch_ms']:>7.1f}ms  {trt_ms:>7.1f}ms  "
                 f"{speedup:>6.1f}x  {cos2:>10.6f}"
             )
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
 
 
 if __name__ == "__main__":

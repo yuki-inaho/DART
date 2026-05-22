@@ -10,21 +10,24 @@ Approaches:
 
 import sys
 import time
+from collections import Counter
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from pathlib import Path
-from collections import Counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import onnx
+import tensorrt as trt
+
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import (
-    patch_rope_for_export, unpatch_rope,
-    patch_sdpa_for_export, unpatch_sdpa,
+    patch_rope_for_export,
+    patch_sdpa_for_export,
+    unpatch_rope,
+    unpatch_sdpa,
 )
-
-import tensorrt as trt
-import onnx
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = "cuda"
@@ -53,10 +56,13 @@ def export_backbone(model, onnx_path, use_fp32_sdpa=False):
 
     with torch.inference_mode():
         torch.onnx.export(
-            wrapper, (dummy,), onnx_path,
+            wrapper,
+            (dummy,),
+            onnx_path,
             input_names=["image"],
             output_names=["fpn0", "fpn1", "fpn2"],
-            opset_version=17, do_constant_folding=True,
+            opset_version=17,
+            do_constant_folding=True,
         )
 
     if use_fp32_sdpa:
@@ -95,7 +101,6 @@ def simplify_onnx(input_path, output_path):
 def fold_constants_gs(input_path, output_path):
     """Use onnx-graphsurgeon to fold constants and clean up."""
     import onnx_graphsurgeon as gs
-    import numpy as np
 
     print(f"  Graph surgery on {input_path} -> {output_path}...")
     graph = gs.import_onnx(onnx.load(input_path))
@@ -119,7 +124,9 @@ def build_and_test(onnx_path, model, dummy, label, fp32_strategy=None):
     from sam3.trt.trt_backbone import TRTBackbone
 
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -136,8 +143,10 @@ def build_and_test(onnx_path, model, dummy, label, fp32_strategy=None):
     for i in range(network.num_layers):
         layer_types[str(network.get_layer(i).type).split(".")[-1]] += 1
     total = network.num_layers
-    print(f"  TRT layers: {total} | MatMul={layer_types.get('MATRIX_MULTIPLY',0)} "
-          f"Softmax={layer_types.get('SOFTMAX',0)} Cast={layer_types.get('CAST',0)}")
+    print(
+        f"  TRT layers: {total} | MatMul={layer_types.get('MATRIX_MULTIPLY', 0)} "
+        f"Softmax={layer_types.get('SOFTMAX', 0)} Cast={layer_types.get('CAST', 0)}"
+    )
 
     fp32_count = 0
     if fp32_strategy == "attn_matmul_softmax":
@@ -176,8 +185,9 @@ def build_and_test(onnx_path, model, dummy, label, fp32_strategy=None):
     pt_fpn = pt_out["backbone_fpn"]
 
     pos_module = backbone.vision_backbone.position_encoding
-    trt_bb = TRTBackbone(engine_path=engine_path, device=DEVICE,
-                         pos_encoding_module=pos_module)
+    trt_bb = TRTBackbone(
+        engine_path=engine_path, device=DEVICE, pos_encoding_module=pos_module
+    )
 
     with torch.inference_mode():
         trt_out = trt_bb.forward_image(dummy)
@@ -203,8 +213,10 @@ def build_and_test(onnx_path, model, dummy, label, fp32_strategy=None):
         ms = (time.perf_counter() - t0) / 100 * 1000
 
     status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
-    print(f"  {label:40s} | cos=[{cos[0]:.4f},{cos[1]:.4f},{cos[2]:.4f}] | "
-          f"{ms:.1f}ms | build={build_s:.0f}s | {status}")
+    print(
+        f"  {label:40s} | cos=[{cos[0]:.4f},{cos[1]:.4f},{cos[2]:.4f}] | "
+        f"{ms:.1f}ms | build={build_s:.0f}s | {status}"
+    )
 
     del trt_bb
     torch.cuda.empty_cache()
@@ -215,7 +227,9 @@ def build_and_test(onnx_path, model, dummy, label, fp32_strategy=None):
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -231,7 +245,8 @@ def main():
     if not Path(onnx_0).exists():
         export_backbone(model, onnx_0)
     r = build_and_test(onnx_0, model, dummy, "baseline pure FP16")
-    if r: results["baseline_fp16"] = r
+    if r:
+        results["baseline_fp16"] = r
 
     # ============================================================
     # Approach 0b: Baseline with attn FP32 (current best)
@@ -239,9 +254,11 @@ def main():
     print("\n" + "=" * 80)
     print("APPROACH 0b: Baseline + attention FP32 constraints")
     print("=" * 80)
-    r = build_and_test(onnx_0, model, dummy, "baseline attn FP32",
-                       fp32_strategy="attn_matmul_softmax")
-    if r: results["baseline_attn_fp32"] = r
+    r = build_and_test(
+        onnx_0, model, dummy, "baseline attn FP32", fp32_strategy="attn_matmul_softmax"
+    )
+    if r:
+        results["baseline_attn_fp32"] = r
 
     # ============================================================
     # Approach 1: onnxsim simplified graph
@@ -253,7 +270,8 @@ def main():
     try:
         simplify_onnx(onnx_0, onnx_1)
         r = build_and_test(onnx_1, model, dummy, "onnxsim pure FP16")
-        if r: results["onnxsim_fp16"] = r
+        if r:
+            results["onnxsim_fp16"] = r
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -266,7 +284,8 @@ def main():
     onnx_2 = "backbone_fp32sdpa.onnx"
     export_backbone(model, onnx_2, use_fp32_sdpa=True)
     r = build_and_test(onnx_2, model, dummy, "fp32_sdpa pure FP16")
-    if r: results["fp32sdpa_fp16"] = r
+    if r:
+        results["fp32sdpa_fp16"] = r
 
     # ============================================================
     # Approach 3: FP32 SDPA + onnxsim
@@ -278,7 +297,8 @@ def main():
     try:
         simplify_onnx(onnx_2, onnx_3)
         r = build_and_test(onnx_3, model, dummy, "fp32_sdpa + onnxsim FP16")
-        if r: results["fp32sdpa_sim_fp16"] = r
+        if r:
+            results["fp32sdpa_sim_fp16"] = r
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -292,7 +312,8 @@ def main():
     try:
         fold_constants_gs(onnx_0, onnx_4)
         r = build_and_test(onnx_4, model, dummy, "graphsurgeon pure FP16")
-        if r: results["gs_fp16"] = r
+        if r:
+            results["gs_fp16"] = r
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -306,7 +327,8 @@ def main():
     try:
         fold_constants_gs(onnx_2, onnx_5)
         r = build_and_test(onnx_5, model, dummy, "fp32_sdpa + GS pure FP16")
-        if r: results["fp32sdpa_gs_fp16"] = r
+        if r:
+            results["fp32sdpa_gs_fp16"] = r
     except Exception as e:
         print(f"  FAILED: {e}")
 
@@ -316,9 +338,15 @@ def main():
     print("\n" + "=" * 80)
     print("APPROACH 2b: FP32 SDPA + attn FP32 constraints")
     print("=" * 80)
-    r = build_and_test(onnx_2, model, dummy, "fp32_sdpa + attn FP32 constraints",
-                       fp32_strategy="attn_matmul_softmax")
-    if r: results["fp32sdpa_attn_fp32"] = r
+    r = build_and_test(
+        onnx_2,
+        model,
+        dummy,
+        "fp32_sdpa + attn FP32 constraints",
+        fp32_strategy="attn_matmul_softmax",
+    )
+    if r:
+        results["fp32sdpa_attn_fp32"] = r
 
     # ============================================================
     # SUMMARY

@@ -107,6 +107,7 @@ def export_onnx(
     # Validate
     try:
         import onnx
+
         onnx_model = onnx.load(output_path)
         onnx.checker.check_model(onnx_model)
         print("ONNX validation passed.")
@@ -118,8 +119,12 @@ def export_onnx(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export student backbone to ONNX")
-    parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Teacher checkpoint (unused, for compat)")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Teacher checkpoint (unused, for compat)",
+    )
     parser.add_argument("--adapter-checkpoint", type=str, required=True)
     parser.add_argument("--backbone", type=str, default="efficientvit_l1")
     parser.add_argument("--output", type=str, default="student_backbone.onnx")

@@ -37,7 +37,9 @@ def cosine_similarity(a, b):
     ).item()
 
 
-def build_engine_with_block_range(onnx_path, fp32_blocks, engine_path, workspace_gb=4.0):
+def build_engine_with_block_range(
+    onnx_path, fp32_blocks, engine_path, workspace_gb=4.0
+):
     """Build engine with specific blocks' attention in FP32."""
     logger = trt.Logger(trt.Logger.WARNING)
     builder = trt.Builder(logger)
@@ -63,11 +65,26 @@ def build_engine_with_block_range(onnx_path, fp32_blocks, engine_path, workspace
     # Skip types
     skip_types = set()
     for type_name in (
-        "SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-        "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-        "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-        "NON_ZERO", "ONE_HOT", "GRID_SAMPLE",
-        "CONDITIONAL_INPUT", "CONDITIONAL_OUTPUT",
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
+        "CONDITIONAL_INPUT",
+        "CONDITIONAL_OUTPUT",
     ):
         if hasattr(trt.LayerType, type_name):
             skip_types.add(getattr(trt.LayerType, type_name))
@@ -167,16 +184,22 @@ def main():
     print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # PyTorch reference
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
     from torchvision.transforms import v2
 
+    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
+
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
 
     image = Image.open(args.image).convert("RGB")
@@ -206,16 +229,18 @@ def main():
     results = []
     for label, blocks in configs:
         engine_path = f"backbone_bisect_{label.replace(' ', '_').replace('(', '').replace(')', '')}.engine"
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Config: {label}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         try:
             build_engine_with_block_range(args.onnx, blocks, engine_path)
             result = test_engine(engine_path, img_tensor, ref_dict)
             result["label"] = label
             result["blocks"] = blocks
             results.append(result)
-            print(f"  Speed: {result['avg_ms']:.1f}ms avg, {result['min_ms']:.1f}ms min")
+            print(
+                f"  Speed: {result['avg_ms']:.1f}ms avg, {result['min_ms']:.1f}ms min"
+            )
             print(f"  Cosine: {result['cos_min']:.6f} (min across FPN)")
             for k, cos in result["cosines"].items():
                 status = "OK" if cos > 0.999 else "WARN" if cos > 0.99 else "BAD"
@@ -223,6 +248,7 @@ def main():
         except Exception as e:
             print(f"  ERROR: {e}")
             import traceback
+
             traceback.print_exc()
 
         # Clean up engine to save disk
@@ -230,13 +256,17 @@ def main():
             os.remove(engine_path)
 
     # Summary
-    print(f"\n\n{'='*80}")
+    print(f"\n\n{'=' * 80}")
     print("BLOCK BISECTION RESULTS")
-    print(f"{'='*80}")
-    print(f"{'Config':<35s} {'Avg ms':>8s} {'Min ms':>8s} {'Cos min':>10s} {'Status':>8s}")
-    print(f"{'-'*35} {'-'*8} {'-'*8} {'-'*10} {'-'*8}")
+    print(f"{'=' * 80}")
+    print(
+        f"{'Config':<35s} {'Avg ms':>8s} {'Min ms':>8s} {'Cos min':>10s} {'Status':>8s}"
+    )
+    print(f"{'-' * 35} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 8}")
     for r in results:
-        status = "OK" if r["cos_min"] > 0.999 else "WARN" if r["cos_min"] > 0.99 else "BAD"
+        status = (
+            "OK" if r["cos_min"] > 0.999 else "WARN" if r["cos_min"] > 0.99 else "BAD"
+        )
         print(
             f"{r['label']:<35s} {r['avg_ms']:>8.1f} {r['min_ms']:>8.1f} "
             f"{r['cos_min']:>10.6f} {status:>8s}"

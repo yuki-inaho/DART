@@ -7,15 +7,16 @@ import os
 import queue
 import re
 import time
-from threading import Condition, get_ident, Lock, Thread
+from threading import Condition, Lock, Thread, get_ident
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from PIL import Image
-from sam3.logger import get_logger
 from tqdm import tqdm
+
+from sam3.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -10,18 +10,17 @@ Also test: can we use TRT's FP16 with FP32 accumulation?
 
 import sys
 import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from pathlib import Path
-from collections import Counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import tensorrt as trt
+
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
-from sam3.model.vitdet import get_abs_pos
-
-import tensorrt as trt
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = "cuda"
@@ -47,10 +46,13 @@ def export_backbone(model, onnx_path):
 
     with torch.inference_mode():
         torch.onnx.export(
-            wrapper, (dummy,), onnx_path,
+            wrapper,
+            (dummy,),
+            onnx_path,
             input_names=["image"],
             output_names=["fpn0", "fpn1", "fpn2"],
-            opset_version=17, do_constant_folding=True,
+            opset_version=17,
+            do_constant_folding=True,
         )
 
     unpatch_rope(backbone)
@@ -68,7 +70,9 @@ def build_with_selective_fp32(onnx_path, output_path, fp32_strategy, timing=True
     - "qk_softmax": only Q@K^T + Softmax (minimal)
     """
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -138,12 +142,14 @@ def build_with_selective_fp32(onnx_path, output_path, fp32_strategy, timing=True
                 fp32_count += 1
             elif type_name == "MATRIX_MULTIPLY":
                 # Only Q@K^T MatMul (not QKV proj, not output proj, not MLP)
-                is_attn_score = ("MatMul" in name and
-                                 "qkv" not in name and
-                                 "proj" not in name and
-                                 "fc1" not in name and
-                                 "fc2" not in name and
-                                 "mlp" not in name)
+                is_attn_score = (
+                    "MatMul" in name
+                    and "qkv" not in name
+                    and "proj" not in name
+                    and "fc1" not in name
+                    and "fc2" not in name
+                    and "mlp" not in name
+                )
                 if is_attn_score:
                     layer.precision = trt.float32
                     layer.set_output_type(0, trt.float32)
@@ -180,8 +186,9 @@ def test_engine(engine_path, model, dummy, label):
     pt_fpn = pt_out["backbone_fpn"]
 
     pos_module = backbone.vision_backbone.position_encoding
-    trt_bb = TRTBackbone(engine_path=engine_path, device=DEVICE,
-                         pos_encoding_module=pos_module)
+    trt_bb = TRTBackbone(
+        engine_path=engine_path, device=DEVICE, pos_encoding_module=pos_module
+    )
 
     with torch.inference_mode():
         trt_out = trt_bb.forward_image(dummy)
@@ -207,7 +214,9 @@ def test_engine(engine_path, model, dummy, label):
         ms = (time.perf_counter() - t0) / 50 * 1000
 
     status = "OK" if cos[-1] > 0.99 else "BROKEN" if cos[-1] < 0.5 else "DEGRADED"
-    print(f"  {label:35s} | cos=[{cos[0]:.4f}, {cos[1]:.4f}, {cos[2]:.4f}] | {ms:.1f}ms | {status}")
+    print(
+        f"  {label:35s} | cos=[{cos[0]:.4f}, {cos[1]:.4f}, {cos[2]:.4f}] | {ms:.1f}ms | {status}"
+    )
 
     del trt_bb
     torch.cuda.empty_cache()
@@ -217,7 +226,9 @@ def test_engine(engine_path, model, dummy, label):
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     dummy = torch.randn(1, 3, 1008, 1008, device=DEVICE)
 
@@ -232,7 +243,9 @@ def main():
     print("=" * 80)
 
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_path, "rb") as f:
         parser.parse(f.read())
@@ -257,7 +270,7 @@ def main():
     fc2_count = sum(1 for n in matmul_names if "fc2" in n)
     attn_count = len(matmul_names) - qkv_count - proj_count - fc1_count - fc2_count
 
-    print(f"\n  MatMul breakdown:")
+    print("\n  MatMul breakdown:")
     print(f"    QKV projection:  {qkv_count}")
     print(f"    Attention (Q@K^T, attn@V): {attn_count}")
     print(f"    Output projection: {proj_count}")
@@ -265,9 +278,19 @@ def main():
     print(f"    MLP fc2: {fc2_count}")
 
     # Show sample names
-    print(f"\n  Sample MatMul names (first 10):")
+    print("\n  Sample MatMul names (first 10):")
     for name in matmul_names[:10]:
-        cat = "qkv" if "qkv" in name else "proj" if "proj" in name else "fc1" if "fc1" in name else "fc2" if "fc2" in name else "attn"
+        cat = (
+            "qkv"
+            if "qkv" in name
+            else "proj"
+            if "proj" in name
+            else "fc1"
+            if "fc1" in name
+            else "fc2"
+            if "fc2" in name
+            else "attn"
+        )
         print(f"    [{cat:5s}] {name}")
 
     # Build and test engines
@@ -301,7 +324,9 @@ def main():
     print("\n" + "=" * 80)
     print("SUMMARY")
     print("=" * 80)
-    print(f"  {'Strategy':>30s} | {'FPN[-1] cos':>12s} | {'Speed (ms)':>10s} | {'FP32 layers':>12s}")
+    print(
+        f"  {'Strategy':>30s} | {'FPN[-1] cos':>12s} | {'Speed (ms)':>10s} | {'FP32 layers':>12s}"
+    )
     print("  " + "-" * 75)
     for strategy, (cos, ms, n) in results.items():
         print(f"  {strategy:>30s} | {cos[-1]:>12.4f} | {ms:>10.1f} | {n:>12d}")

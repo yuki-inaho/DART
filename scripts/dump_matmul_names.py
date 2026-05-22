@@ -6,7 +6,9 @@ import tensorrt as trt
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 
 builder = trt.Builder(TRT_LOGGER)
-network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+network = builder.create_network(
+    1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+)
 parser = trt.OnnxParser(network, TRT_LOGGER)
 
 with open("backbone.onnx", "rb") as f:
@@ -16,11 +18,13 @@ with open("backbone.onnx", "rb") as f:
             print(f"  Error: {parser.get_error(i)}")
         raise RuntimeError("Failed to parse ONNX")
 
-matmul_type = getattr(trt.LayerType, "MATRIX_MULTIPLY")
+matmul_type = trt.LayerType.MATRIX_MULTIPLY
 softmax_type = getattr(trt.LayerType, "SOFTMAX", None)
 
 print(f"Total layers: {network.num_layers}")
-print(f"\nMATRIX_MULTIPLY layers ({sum(1 for i in range(network.num_layers) if network.get_layer(i).type == matmul_type)}):")
+print(
+    f"\nMATRIX_MULTIPLY layers ({sum(1 for i in range(network.num_layers) if network.get_layer(i).type == matmul_type)}):"
+)
 for i in range(network.num_layers):
     layer = network.get_layer(i)
     if layer.type == matmul_type:
@@ -39,7 +43,11 @@ for i in range(network.num_layers):
         print(f"         outputs: {outputs}")
 
 if softmax_type:
-    count = sum(1 for i in range(network.num_layers) if network.get_layer(i).type == softmax_type)
+    count = sum(
+        1
+        for i in range(network.num_layers)
+        if network.get_layer(i).type == softmax_type
+    )
     print(f"\nSOFTMAX layers ({count}):")
     for i in range(network.num_layers):
         layer = network.get_layer(i)

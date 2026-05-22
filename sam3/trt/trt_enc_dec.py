@@ -11,7 +11,6 @@ handles padding/slicing for the actual number of classes at runtime.
 """
 
 import math
-from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch import Tensor
@@ -62,19 +61,25 @@ class TRTEncoderDecoder:
         # Allocate persistent GPU buffers — inputs
         mc = self.max_classes
         self._buf_img = torch.zeros(
-            mc, 256, self.spatial_h, self.spatial_w,
-            dtype=torch.float32, device=self.device,
+            mc,
+            256,
+            self.spatial_h,
+            self.spatial_w,
+            dtype=torch.float32,
+            device=self.device,
         )
         self._buf_pos = torch.zeros(
-            mc, 256, self.spatial_h, self.spatial_w,
-            dtype=torch.float32, device=self.device,
+            mc,
+            256,
+            self.spatial_h,
+            self.spatial_w,
+            dtype=torch.float32,
+            device=self.device,
         )
         self._buf_text = torch.zeros(
             32, mc, 256, dtype=torch.float32, device=self.device
         )
-        self._buf_mask = torch.ones(
-            mc, 32, dtype=torch.float32, device=self.device
-        )
+        self._buf_mask = torch.ones(mc, 32, dtype=torch.float32, device=self.device)
 
         # Allocate persistent GPU buffers — outputs
         self._buf_scores = torch.zeros(
@@ -116,12 +121,12 @@ class TRTEncoderDecoder:
 
     def forward(
         self,
-        img_feats: List[Tensor],
-        img_pos_embeds: List[Tensor],
+        img_feats: list[Tensor],
+        img_pos_embeds: list[Tensor],
         text_feats: Tensor,
         text_mask: Tensor,
         num_classes: int,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         """Run TRT encoder+decoder+scoring inference.
 
         Args:
@@ -137,7 +142,7 @@ class TRTEncoderDecoder:
               - boxes: (N, 200, 4) cxcywh coordinates (sigmoid)
         """
         N = num_classes
-        assert N <= self.max_classes, (
+        assert self.max_classes >= N, (
             f"num_classes={N} exceeds max_classes={self.max_classes}"
         )
 
@@ -146,7 +151,7 @@ class TRTEncoderDecoder:
         # Image features: last FPN level, (H*W, 1, d) → (1, d, H, W) → expand
         img_feat = img_feats[-1]  # (H*W, 1, 256)
         hw = img_feat.shape[0]
-        h = w = int(math.isqrt(hw))
+        h = w = math.isqrt(hw)
         assert h * w == hw, f"Non-square spatial features: {hw} elements"
         if h != self.spatial_h or w != self.spatial_w:
             raise RuntimeError(
@@ -182,7 +187,7 @@ class TRTEncoderDecoder:
 
         # --- Slice outputs to actual N classes ---
         scores = self._buf_scores[:N].clone()  # (N, 200, 1)
-        boxes = self._buf_boxes[:N].clone()    # (N, 200, 4)
+        boxes = self._buf_boxes[:N].clone()  # (N, 200, 4)
 
         if self.has_presence:
             presence = self._buf_presence[:N].clone()  # (N, 1)

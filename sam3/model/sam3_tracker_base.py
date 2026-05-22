@@ -6,9 +6,10 @@ import logging
 
 import torch
 import torch.nn.functional as F
+
 from sam3.model.memory import SimpleMaskEncoder
 from sam3.model.sam3_tracker_utils import get_1d_sine_pe, select_closest_cond_frames
-from sam3.sam.mask_decoder import MaskDecoder, MLP
+from sam3.sam.mask_decoder import MLP, MaskDecoder
 from sam3.sam.prompt_encoder import PromptEncoder
 from sam3.sam.transformer import TwoWayTransformer
 from sam3.train.data.collator import BatchedDatapoint
@@ -997,7 +998,7 @@ class Sam3TrackerBase(torch.nn.Module):
             )
         (
             _,
-            high_res_multimasks,
+            _high_res_multimasks,
             ious,
             low_res_masks,
             high_res_masks,

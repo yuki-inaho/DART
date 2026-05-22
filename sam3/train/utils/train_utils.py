@@ -56,7 +56,7 @@ def register_omegaconf_resolvers():
     OmegaConf.register_new_resolver("subtract", lambda x, y: x - y)
     OmegaConf.register_new_resolver("range", lambda x: list(range(x)))
     OmegaConf.register_new_resolver("int", lambda x: int(x))
-    OmegaConf.register_new_resolver("ceil_int", lambda x: int(math.ceil(x)))
+    OmegaConf.register_new_resolver("ceil_int", lambda x: math.ceil(x))
     OmegaConf.register_new_resolver("merge", lambda *x: OmegaConf.merge(*x))
     OmegaConf.register_new_resolver("string", lambda x: str(x))
 
@@ -221,7 +221,7 @@ class MemMeter:
 
 def human_readable_time(time_seconds):
     time = int(time_seconds)
-    minutes, seconds = divmod(time, 60)
+    minutes, _seconds = divmod(time, 60)
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
     return f"{days:02}d {hours:02}h {minutes:02}m"

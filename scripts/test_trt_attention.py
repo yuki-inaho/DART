@@ -13,9 +13,10 @@ This test builds ONNX models with increasingly realistic attention blocks.
 """
 
 import sys
-import torch
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -75,8 +76,16 @@ def build_and_run_trt(onnx_path, input_tensor, fp16=True):
     return d_output
 
 
-def make_attention_onnx(seq_len, dim, num_heads, output_path, num_blocks=1,
-                        use_residual=True, use_mlp=False, use_layernorm=True):
+def make_attention_onnx(
+    seq_len,
+    dim,
+    num_heads,
+    output_path,
+    num_blocks=1,
+    use_residual=True,
+    use_mlp=False,
+    use_layernorm=True,
+):
     """Create ONNX with attention blocks.
 
     Each block:
@@ -106,56 +115,94 @@ def make_attention_onnx(seq_len, dim, num_heads, output_path, num_blocks=1,
         if use_layernorm:
             ln_w = np.ones(dim, dtype=np.float32)
             ln_b = np.zeros(dim, dtype=np.float32)
-            initializers.append(helper.make_tensor(f"{prefix}ln_w", TensorProto.FLOAT, [dim], ln_w))
-            initializers.append(helper.make_tensor(f"{prefix}ln_b", TensorProto.FLOAT, [dim], ln_b))
+            initializers.append(
+                helper.make_tensor(f"{prefix}ln_w", TensorProto.FLOAT, [dim], ln_w)
+            )
+            initializers.append(
+                helper.make_tensor(f"{prefix}ln_b", TensorProto.FLOAT, [dim], ln_b)
+            )
             ln_out = f"{prefix}ln"
-            nodes.append(helper.make_node(
-                "LayerNormalization", [prev_name, f"{prefix}ln_w", f"{prefix}ln_b"], [ln_out],
-                axis=-1, epsilon=1e-6
-            ))
+            nodes.append(
+                helper.make_node(
+                    "LayerNormalization",
+                    [prev_name, f"{prefix}ln_w", f"{prefix}ln_b"],
+                    [ln_out],
+                    axis=-1,
+                    epsilon=1e-6,
+                )
+            )
             attn_input = ln_out
         else:
             attn_input = prev_name
 
         # QKV projection
-        W_qkv = np.random.randn(dim, 3 * dim).astype(np.float32) * (dim ** -0.5)
-        initializers.append(helper.make_tensor(f"{prefix}W_qkv", TensorProto.FLOAT,
-                                               [dim, 3 * dim], W_qkv.flatten()))
+        W_qkv = np.random.randn(dim, 3 * dim).astype(np.float32) * (dim**-0.5)
+        initializers.append(
+            helper.make_tensor(
+                f"{prefix}W_qkv", TensorProto.FLOAT, [dim, 3 * dim], W_qkv.flatten()
+            )
+        )
         qkv_out = f"{prefix}qkv"
-        nodes.append(helper.make_node("MatMul", [attn_input, f"{prefix}W_qkv"], [qkv_out]))
+        nodes.append(
+            helper.make_node("MatMul", [attn_input, f"{prefix}W_qkv"], [qkv_out])
+        )
 
         # Reshape to [1, seq_len, 3, num_heads, head_dim]
         shape_3hd = np.array([1, seq_len, 3, num_heads, head_dim], dtype=np.int64)
-        initializers.append(helper.make_tensor(f"{prefix}shape_3hd", TensorProto.INT64,
-                                               [5], shape_3hd))
+        initializers.append(
+            helper.make_tensor(f"{prefix}shape_3hd", TensorProto.INT64, [5], shape_3hd)
+        )
         qkv_reshaped = f"{prefix}qkv_reshaped"
-        nodes.append(helper.make_node("Reshape", [qkv_out, f"{prefix}shape_3hd"], [qkv_reshaped]))
+        nodes.append(
+            helper.make_node("Reshape", [qkv_out, f"{prefix}shape_3hd"], [qkv_reshaped])
+        )
 
         # Transpose to [3, 1, num_heads, seq_len, head_dim]
         qkv_transposed = f"{prefix}qkv_t"
-        nodes.append(helper.make_node("Transpose", [qkv_reshaped], [qkv_transposed],
-                                      perm=[2, 0, 3, 1, 4]))
+        nodes.append(
+            helper.make_node(
+                "Transpose", [qkv_reshaped], [qkv_transposed], perm=[2, 0, 3, 1, 4]
+            )
+        )
 
         # Split into Q, K, V along axis 0
         q_name = f"{prefix}q"
         k_name = f"{prefix}k"
         v_name = f"{prefix}v"
         split_sizes = np.array([1, 1, 1], dtype=np.int64)
-        initializers.append(helper.make_tensor(f"{prefix}split_sizes", TensorProto.INT64,
-                                               [3], split_sizes))
-        nodes.append(helper.make_node("Split", [qkv_transposed, f"{prefix}split_sizes"],
-                                      [q_name, k_name, v_name], axis=0))
+        initializers.append(
+            helper.make_tensor(
+                f"{prefix}split_sizes", TensorProto.INT64, [3], split_sizes
+            )
+        )
+        nodes.append(
+            helper.make_node(
+                "Split",
+                [qkv_transposed, f"{prefix}split_sizes"],
+                [q_name, k_name, v_name],
+                axis=0,
+            )
+        )
 
         # Squeeze the split dimension: [1, 1, heads, seq, head_dim] -> [1, heads, seq, head_dim]
         squeeze_axes = np.array([0], dtype=np.int64)
-        initializers.append(helper.make_tensor(f"{prefix}squeeze_axes", TensorProto.INT64,
-                                               [1], squeeze_axes))
+        initializers.append(
+            helper.make_tensor(
+                f"{prefix}squeeze_axes", TensorProto.INT64, [1], squeeze_axes
+            )
+        )
         q_sq = f"{prefix}q_sq"
         k_sq = f"{prefix}k_sq"
         v_sq = f"{prefix}v_sq"
-        nodes.append(helper.make_node("Squeeze", [q_name, f"{prefix}squeeze_axes"], [q_sq]))
-        nodes.append(helper.make_node("Squeeze", [k_name, f"{prefix}squeeze_axes"], [k_sq]))
-        nodes.append(helper.make_node("Squeeze", [v_name, f"{prefix}squeeze_axes"], [v_sq]))
+        nodes.append(
+            helper.make_node("Squeeze", [q_name, f"{prefix}squeeze_axes"], [q_sq])
+        )
+        nodes.append(
+            helper.make_node("Squeeze", [k_name, f"{prefix}squeeze_axes"], [k_sq])
+        )
+        nodes.append(
+            helper.make_node("Squeeze", [v_name, f"{prefix}squeeze_axes"], [v_sq])
+        )
 
         # K^T: transpose last two dims
         k_t = f"{prefix}k_t"
@@ -166,14 +213,20 @@ def make_attention_onnx(seq_len, dim, num_heads, output_path, num_blocks=1,
         nodes.append(helper.make_node("MatMul", [q_sq, k_t], [scores_raw]))
 
         # Scale by 1/sqrt(head_dim)
-        scale_val = np.array([head_dim ** -0.5], dtype=np.float32)
-        initializers.append(helper.make_tensor(f"{prefix}scale", TensorProto.FLOAT, [1], scale_val))
+        scale_val = np.array([head_dim**-0.5], dtype=np.float32)
+        initializers.append(
+            helper.make_tensor(f"{prefix}scale", TensorProto.FLOAT, [1], scale_val)
+        )
         scores_scaled = f"{prefix}scores_scaled"
-        nodes.append(helper.make_node("Mul", [scores_raw, f"{prefix}scale"], [scores_scaled]))
+        nodes.append(
+            helper.make_node("Mul", [scores_raw, f"{prefix}scale"], [scores_scaled])
+        )
 
         # Softmax
         attn_weights = f"{prefix}attn_weights"
-        nodes.append(helper.make_node("Softmax", [scores_scaled], [attn_weights], axis=-1))
+        nodes.append(
+            helper.make_node("Softmax", [scores_scaled], [attn_weights], axis=-1)
+        )
 
         # Attn @ V
         context = f"{prefix}context"
@@ -181,21 +234,35 @@ def make_attention_onnx(seq_len, dim, num_heads, output_path, num_blocks=1,
 
         # Transpose back: [1, heads, seq, head_dim] -> [1, seq, heads, head_dim]
         context_t = f"{prefix}context_t"
-        nodes.append(helper.make_node("Transpose", [context], [context_t], perm=[0, 2, 1, 3]))
+        nodes.append(
+            helper.make_node("Transpose", [context], [context_t], perm=[0, 2, 1, 3])
+        )
 
         # Reshape to [1, seq_len, dim]
         shape_flat = np.array([1, seq_len, dim], dtype=np.int64)
-        initializers.append(helper.make_tensor(f"{prefix}shape_flat", TensorProto.INT64,
-                                               [3], shape_flat))
+        initializers.append(
+            helper.make_tensor(
+                f"{prefix}shape_flat", TensorProto.INT64, [3], shape_flat
+            )
+        )
         context_flat = f"{prefix}context_flat"
-        nodes.append(helper.make_node("Reshape", [context_t, f"{prefix}shape_flat"], [context_flat]))
+        nodes.append(
+            helper.make_node(
+                "Reshape", [context_t, f"{prefix}shape_flat"], [context_flat]
+            )
+        )
 
         # Output projection
-        W_out = np.random.randn(dim, dim).astype(np.float32) * (dim ** -0.5)
-        initializers.append(helper.make_tensor(f"{prefix}W_out", TensorProto.FLOAT,
-                                               [dim, dim], W_out.flatten()))
+        W_out = np.random.randn(dim, dim).astype(np.float32) * (dim**-0.5)
+        initializers.append(
+            helper.make_tensor(
+                f"{prefix}W_out", TensorProto.FLOAT, [dim, dim], W_out.flatten()
+            )
+        )
         proj_out = f"{prefix}proj_out"
-        nodes.append(helper.make_node("MatMul", [context_flat, f"{prefix}W_out"], [proj_out]))
+        nodes.append(
+            helper.make_node("MatMul", [context_flat, f"{prefix}W_out"], [proj_out])
+        )
 
         # Residual
         if use_residual:
@@ -210,33 +277,62 @@ def make_attention_onnx(seq_len, dim, num_heads, output_path, num_blocks=1,
             mlp_dim = dim * 4
 
             # LN2
-            initializers.append(helper.make_tensor(f"{prefix}ln2_w", TensorProto.FLOAT, [dim],
-                                                   np.ones(dim, dtype=np.float32)))
-            initializers.append(helper.make_tensor(f"{prefix}ln2_b", TensorProto.FLOAT, [dim],
-                                                   np.zeros(dim, dtype=np.float32)))
+            initializers.append(
+                helper.make_tensor(
+                    f"{prefix}ln2_w",
+                    TensorProto.FLOAT,
+                    [dim],
+                    np.ones(dim, dtype=np.float32),
+                )
+            )
+            initializers.append(
+                helper.make_tensor(
+                    f"{prefix}ln2_b",
+                    TensorProto.FLOAT,
+                    [dim],
+                    np.zeros(dim, dtype=np.float32),
+                )
+            )
             ln2_out = f"{prefix}ln2"
-            nodes.append(helper.make_node(
-                "LayerNormalization", [block_out, f"{prefix}ln2_w", f"{prefix}ln2_b"], [ln2_out],
-                axis=-1, epsilon=1e-6
-            ))
+            nodes.append(
+                helper.make_node(
+                    "LayerNormalization",
+                    [block_out, f"{prefix}ln2_w", f"{prefix}ln2_b"],
+                    [ln2_out],
+                    axis=-1,
+                    epsilon=1e-6,
+                )
+            )
 
             # FC1
-            W_fc1 = np.random.randn(dim, mlp_dim).astype(np.float32) * (dim ** -0.5)
-            initializers.append(helper.make_tensor(f"{prefix}W_fc1", TensorProto.FLOAT,
-                                                   [dim, mlp_dim], W_fc1.flatten()))
+            W_fc1 = np.random.randn(dim, mlp_dim).astype(np.float32) * (dim**-0.5)
+            initializers.append(
+                helper.make_tensor(
+                    f"{prefix}W_fc1", TensorProto.FLOAT, [dim, mlp_dim], W_fc1.flatten()
+                )
+            )
             fc1_out = f"{prefix}fc1"
-            nodes.append(helper.make_node("MatMul", [ln2_out, f"{prefix}W_fc1"], [fc1_out]))
+            nodes.append(
+                helper.make_node("MatMul", [ln2_out, f"{prefix}W_fc1"], [fc1_out])
+            )
 
             # GELU activation
             gelu_out = f"{prefix}gelu"
-            nodes.append(helper.make_node("Gelu", [fc1_out], [gelu_out], domain="com.microsoft"))
+            nodes.append(
+                helper.make_node("Gelu", [fc1_out], [gelu_out], domain="com.microsoft")
+            )
 
             # FC2
-            W_fc2 = np.random.randn(mlp_dim, dim).astype(np.float32) * (mlp_dim ** -0.5)
-            initializers.append(helper.make_tensor(f"{prefix}W_fc2", TensorProto.FLOAT,
-                                                   [mlp_dim, dim], W_fc2.flatten()))
+            W_fc2 = np.random.randn(mlp_dim, dim).astype(np.float32) * (mlp_dim**-0.5)
+            initializers.append(
+                helper.make_tensor(
+                    f"{prefix}W_fc2", TensorProto.FLOAT, [mlp_dim, dim], W_fc2.flatten()
+                )
+            )
             fc2_out = f"{prefix}fc2"
-            nodes.append(helper.make_node("MatMul", [gelu_out, f"{prefix}W_fc2"], [fc2_out]))
+            nodes.append(
+                helper.make_node("MatMul", [gelu_out, f"{prefix}W_fc2"], [fc2_out])
+            )
 
             # Residual
             mlp_add = f"{prefix}mlp_add"
@@ -247,22 +343,35 @@ def make_attention_onnx(seq_len, dim, num_heads, output_path, num_blocks=1,
         if b == num_blocks - 1:
             # Final rename to Y
             rename_shape = np.array([1, seq_len, dim], dtype=np.int64)
-            initializers.append(helper.make_tensor(f"final_shape", TensorProto.INT64,
-                                                   [3], rename_shape))
+            initializers.append(
+                helper.make_tensor("final_shape", TensorProto.INT64, [3], rename_shape)
+            )
             nodes.append(helper.make_node("Reshape", [block_out, "final_shape"], ["Y"]))
         prev_name = block_out
 
     Y = helper.make_tensor_value_info("Y", TensorProto.FLOAT, [1, seq_len, dim])
     graph = helper.make_graph(nodes, "attention_test", [X], [Y], initializers)
-    model = helper.make_model(graph, opset_imports=[
-        helper.make_opsetid("", 17),
-        helper.make_opsetid("com.microsoft", 1),
-    ])
+    model = helper.make_model(
+        graph,
+        opset_imports=[
+            helper.make_opsetid("", 17),
+            helper.make_opsetid("com.microsoft", 1),
+        ],
+    )
     onnx.save(model, output_path)
 
 
-def run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, dtype=torch.float32,
-                          use_residual=True, use_mlp=False, use_layernorm=True):
+def run_attention_pytorch(
+    X,
+    onnx_path,
+    num_blocks,
+    dim,
+    num_heads,
+    dtype=torch.float32,
+    use_residual=True,
+    use_mlp=False,
+    use_layernorm=True,
+):
     """Run the same attention computation in PyTorch for comparison."""
     onnx_model = onnx.load(onnx_path)
     weights = {}
@@ -294,7 +403,7 @@ def run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, dtype=torch.
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         # Attention
-        scores = torch.matmul(q, k.transpose(-2, -1)) * (head_dim ** -0.5)
+        scores = torch.matmul(q, k.transpose(-2, -1)) * (head_dim**-0.5)
         attn = torch.softmax(scores, dim=-1)
         context = torch.matmul(attn, v)
 
@@ -331,8 +440,10 @@ def cosine_sim(a, b):
 def test_attention_depth():
     """Test attention blocks at different depths."""
     print("\n  Attention blocks (QKV->softmax->attn@V->proj+residual):")
-    print(f"  {'Config':>35s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}")
+    print(
+        f"  {'Config':>35s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}"
+    )
     print("  " + "-" * 95)
 
     dim = 256
@@ -349,11 +460,15 @@ def test_attention_depth():
 
         # FP32 reference
         with torch.inference_mode():
-            Y_fp32 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, torch.float32)
+            Y_fp32 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float32
+            )
 
         # PyTorch FP16
         with torch.inference_mode():
-            Y_pt16 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, torch.float16)
+            Y_pt16 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float16
+            )
 
         pt_cos = cosine_sim(Y_fp32, Y_pt16)
         pt_diff = (Y_fp32 - Y_pt16.float()).abs().max().item()
@@ -364,8 +479,10 @@ def test_attention_depth():
         trt_diff = (Y_fp32 - Y_trt16).abs().max().item()
 
         label = f"attn dim={dim} heads={num_heads} x{num_blocks}"
-        print(f"  {label:>35s} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f}")
+        print(
+            f"  {label:>35s} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -373,8 +490,10 @@ def test_attention_depth():
 def test_attention_dim():
     """Test attention at different dimensions (256 vs 1024)."""
     print("\n  Attention blocks at dim=1024 (matching ViT-H), 16 heads:")
-    print(f"  {'Config':>35s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}")
+    print(
+        f"  {'Config':>35s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}"
+    )
     print("  " + "-" * 95)
 
     dim = 1024
@@ -390,8 +509,12 @@ def test_attention_dim():
         X = torch.randn(1, seq_len, dim, device=DEVICE)
 
         with torch.inference_mode():
-            Y_fp32 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, torch.float32)
-            Y_pt16 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, torch.float16)
+            Y_fp32 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float32
+            )
+            Y_pt16 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float16
+            )
 
         pt_cos = cosine_sim(Y_fp32, Y_pt16)
         pt_diff = (Y_fp32 - Y_pt16.float()).abs().max().item()
@@ -401,8 +524,10 @@ def test_attention_dim():
         trt_diff = (Y_fp32 - Y_trt16).abs().max().item()
 
         label = f"attn dim=1024 heads=16 x{num_blocks}"
-        print(f"  {label:>35s} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f}")
+        print(
+            f"  {label:>35s} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -410,8 +535,10 @@ def test_attention_dim():
 def test_attention_seq_len():
     """Test with larger sequence lengths (closer to ViT-H's 5184 tokens)."""
     print("\n  Attention at larger sequence lengths (dim=256, 8 heads, 4 blocks):")
-    print(f"  {'Seq len':>10s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}")
+    print(
+        f"  {'Seq len':>10s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}"
+    )
     print("  " + "-" * 70)
 
     dim = 256
@@ -427,8 +554,12 @@ def test_attention_seq_len():
         X = torch.randn(1, seq_len, dim, device=DEVICE)
 
         with torch.inference_mode():
-            Y_fp32 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, torch.float32)
-            Y_pt16 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads, torch.float16)
+            Y_fp32 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float32
+            )
+            Y_pt16 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float16
+            )
 
         pt_cos = cosine_sim(Y_fp32, Y_pt16)
         pt_diff = (Y_fp32 - Y_pt16.float()).abs().max().item()
@@ -437,8 +568,10 @@ def test_attention_seq_len():
         trt_cos = cosine_sim(Y_fp32, Y_trt16)
         trt_diff = (Y_fp32 - Y_trt16).abs().max().item()
 
-        print(f"  {seq_len:>10d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f}")
+        print(
+            f"  {seq_len:>10d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -446,8 +579,10 @@ def test_attention_seq_len():
 def test_attention_with_mlp():
     """Test full transformer blocks (attention + MLP) at dim=256."""
     print("\n  Full transformer blocks (attention + MLP), dim=256, 8 heads:")
-    print(f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}")
+    print(
+        f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}"
+    )
     print("  " + "-" * 70)
 
     dim = 256
@@ -460,8 +595,9 @@ def test_attention_with_mlp():
         np.random.seed(42)
 
         try:
-            make_attention_onnx(seq_len, dim, num_heads, onnx_path,
-                                num_blocks=num_blocks, use_mlp=True)
+            make_attention_onnx(
+                seq_len, dim, num_heads, onnx_path, num_blocks=num_blocks, use_mlp=True
+            )
         except Exception as e:
             print(f"  {num_blocks:>7d} | ONNX build failed: {e}")
             continue
@@ -469,10 +605,12 @@ def test_attention_with_mlp():
         X = torch.randn(1, seq_len, dim, device=DEVICE)
 
         with torch.inference_mode():
-            Y_fp32 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads,
-                                           torch.float32, use_mlp=True)
-            Y_pt16 = run_attention_pytorch(X, onnx_path, num_blocks, dim, num_heads,
-                                           torch.float16, use_mlp=True)
+            Y_fp32 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float32, use_mlp=True
+            )
+            Y_pt16 = run_attention_pytorch(
+                X, onnx_path, num_blocks, dim, num_heads, torch.float16, use_mlp=True
+            )
 
         pt_cos = cosine_sim(Y_fp32, Y_pt16)
         pt_diff = (Y_fp32 - Y_pt16.float()).abs().max().item()
@@ -481,8 +619,10 @@ def test_attention_with_mlp():
             Y_trt16 = build_and_run_trt(onnx_path, X, fp16=True)
             trt_cos = cosine_sim(Y_fp32, Y_trt16)
             trt_diff = (Y_fp32 - Y_trt16).abs().max().item()
-            print(f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-                  f"{trt_diff:>12.4f} | {pt_diff:>12.4f}")
+            print(
+                f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+                f"{trt_diff:>12.4f} | {pt_diff:>12.4f}"
+            )
         except Exception as e:
             print(f"  {num_blocks:>7d} | TRT build failed: {e}")
 
@@ -492,8 +632,10 @@ def test_attention_with_mlp():
 def test_no_residual():
     """Test attention WITHOUT residual connection to see if residual amplifies error."""
     print("\n  Attention WITHOUT residual (dim=256, 8 heads):")
-    print(f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'With residual TRT':>18s} | {'With residual PT':>16s}")
+    print(
+        f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'With residual TRT':>18s} | {'With residual PT':>16s}"
+    )
     print("  " + "-" * 80)
 
     dim = 256
@@ -507,15 +649,35 @@ def test_no_residual():
         np.random.seed(42)
 
         # Without residual
-        make_attention_onnx(seq_len, dim, num_heads, onnx_path_nr,
-                            num_blocks=num_blocks, use_residual=False)
+        make_attention_onnx(
+            seq_len,
+            dim,
+            num_heads,
+            onnx_path_nr,
+            num_blocks=num_blocks,
+            use_residual=False,
+        )
         X = torch.randn(1, seq_len, dim, device=DEVICE)
 
         with torch.inference_mode():
-            Y_fp32_nr = run_attention_pytorch(X, onnx_path_nr, num_blocks, dim, num_heads,
-                                              torch.float32, use_residual=False)
-            Y_pt16_nr = run_attention_pytorch(X, onnx_path_nr, num_blocks, dim, num_heads,
-                                              torch.float16, use_residual=False)
+            Y_fp32_nr = run_attention_pytorch(
+                X,
+                onnx_path_nr,
+                num_blocks,
+                dim,
+                num_heads,
+                torch.float32,
+                use_residual=False,
+            )
+            Y_pt16_nr = run_attention_pytorch(
+                X,
+                onnx_path_nr,
+                num_blocks,
+                dim,
+                num_heads,
+                torch.float16,
+                use_residual=False,
+            )
         pt_cos_nr = cosine_sim(Y_fp32_nr, Y_pt16_nr)
         Y_trt_nr = build_and_run_trt(onnx_path_nr, X, fp16=True)
         trt_cos_nr = cosine_sim(Y_fp32_nr, Y_trt_nr)
@@ -523,20 +685,42 @@ def test_no_residual():
         # With residual (same seed for same weights)
         torch.manual_seed(42)
         np.random.seed(42)
-        make_attention_onnx(seq_len, dim, num_heads, onnx_path_r,
-                            num_blocks=num_blocks, use_residual=True)
+        make_attention_onnx(
+            seq_len,
+            dim,
+            num_heads,
+            onnx_path_r,
+            num_blocks=num_blocks,
+            use_residual=True,
+        )
 
         with torch.inference_mode():
-            Y_fp32_r = run_attention_pytorch(X, onnx_path_r, num_blocks, dim, num_heads,
-                                             torch.float32, use_residual=True)
-            Y_pt16_r = run_attention_pytorch(X, onnx_path_r, num_blocks, dim, num_heads,
-                                             torch.float16, use_residual=True)
+            Y_fp32_r = run_attention_pytorch(
+                X,
+                onnx_path_r,
+                num_blocks,
+                dim,
+                num_heads,
+                torch.float32,
+                use_residual=True,
+            )
+            Y_pt16_r = run_attention_pytorch(
+                X,
+                onnx_path_r,
+                num_blocks,
+                dim,
+                num_heads,
+                torch.float16,
+                use_residual=True,
+            )
         pt_cos_r = cosine_sim(Y_fp32_r, Y_pt16_r)
         Y_trt_r = build_and_run_trt(onnx_path_r, X, fp16=True)
         trt_cos_r = cosine_sim(Y_fp32_r, Y_trt_r)
 
-        print(f"  {num_blocks:>7d} | {trt_cos_nr:>12.6f} | {pt_cos_nr:>12.6f} | "
-              f"{trt_cos_r:>18.6f} | {pt_cos_r:>16.6f}")
+        print(
+            f"  {num_blocks:>7d} | {trt_cos_nr:>12.6f} | {pt_cos_nr:>12.6f} | "
+            f"{trt_cos_r:>18.6f} | {pt_cos_r:>16.6f}"
+        )
 
         Path(onnx_path_nr).unlink(missing_ok=True)
         Path(onnx_path_r).unlink(missing_ok=True)

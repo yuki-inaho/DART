@@ -24,16 +24,15 @@ Optional:
 """
 
 import argparse
-import sys
 from collections import defaultdict
 
 import torch
 import torch.nn as nn
 
-
 # ─────────────────────────────────────────────────────────────
 #  Utilities
 # ─────────────────────────────────────────────────────────────
+
 
 def _extract_qkv(in_proj_weight, d_model):
     """Extract Q, K, V weight matrices from packed in_proj_weight."""
@@ -58,6 +57,7 @@ def _head_slices(d_model, n_heads):
 # ─────────────────────────────────────────────────────────────
 #  1. Layer Pruning — Block Influence Scores
 # ─────────────────────────────────────────────────────────────
+
 
 def compute_block_influence(attn_module, linear1, linear2, d_model):
     """
@@ -92,13 +92,15 @@ def analyze_encoder_layers(encoder, d_model=256):
         _, _, ca_W_V = _extract_qkv(layer.cross_attn_image.in_proj_weight.data, d_model)
         ca_bi = _frobenius(ca_W_O @ ca_W_V)
 
-        results.append({
-            "layer": i,
-            "self_attn_bi": sa_attn_bi,
-            "cross_attn_bi": ca_bi,
-            "ffn_bi": sa_ffn_bi,
-            "total_bi": sa_total + ca_bi,
-        })
+        results.append(
+            {
+                "layer": i,
+                "self_attn_bi": sa_attn_bi,
+                "cross_attn_bi": ca_bi,
+                "ffn_bi": sa_ffn_bi,
+                "total_bi": sa_total + ca_bi,
+            }
+        )
     return results
 
 
@@ -126,20 +128,23 @@ def analyze_decoder_layers(decoder, d_model=256):
         W2 = layer.linear2.weight.data
         ffn_bi = _frobenius(W2 @ W1)
 
-        results.append({
-            "layer": i,
-            "self_attn_bi": sa_bi,
-            "cross_attn_img_bi": ca_bi,
-            "cross_attn_text_bi": cat_bi,
-            "ffn_bi": ffn_bi,
-            "total_bi": sa_bi + ca_bi + cat_bi + ffn_bi,
-        })
+        results.append(
+            {
+                "layer": i,
+                "self_attn_bi": sa_bi,
+                "cross_attn_img_bi": ca_bi,
+                "cross_attn_text_bi": cat_bi,
+                "ffn_bi": ffn_bi,
+                "total_bi": sa_bi + ca_bi + cat_bi + ffn_bi,
+            }
+        )
     return results
 
 
 # ─────────────────────────────────────────────────────────────
 #  2. Head Pruning — Per-Head Importance
 # ─────────────────────────────────────────────────────────────
+
 
 def compute_head_importance(attn_module, d_model, n_heads):
     """
@@ -151,9 +156,9 @@ def compute_head_importance(attn_module, d_model, n_heads):
     _, _, W_V = _extract_qkv(attn_module.in_proj_weight.data, d_model)
 
     importances = []
-    for h, (s, e) in enumerate(_head_slices(d_model, n_heads)):
-        W_V_h = W_V[s:e, :]   # (d_head, d)
-        W_O_h = W_O[:, s:e]   # (d, d_head)
+    for _h, (s, e) in enumerate(_head_slices(d_model, n_heads)):
+        W_V_h = W_V[s:e, :]  # (d_head, d)
+        W_O_h = W_O[:, s:e]  # (d, d_head)
         imp = _frobenius(W_O_h) * _frobenius(W_V_h)
         importances.append(imp)
     return importances
@@ -191,6 +196,7 @@ def analyze_all_heads(encoder, decoder, d_model=256, n_heads=8):
 #  3. FFN Width Pruning — Per-Neuron Importance
 # ─────────────────────────────────────────────────────────────
 
+
 def compute_neuron_importance(linear1, linear2):
     """
     I_i = ||W1[i, :]||_2  *  ||W2[:, i]||_2
@@ -199,10 +205,10 @@ def compute_neuron_importance(linear1, linear2):
     """
     W1 = linear1.weight.data.float()  # (ffn_dim, d)
     W2 = linear2.weight.data.float()  # (d, ffn_dim)
-    ffn_dim = W1.shape[0]
+    W1.shape[0]
 
-    row_norms = W1.norm(dim=1)        # (ffn_dim,)
-    col_norms = W2.norm(dim=0)        # (ffn_dim,)
+    row_norms = W1.norm(dim=1)  # (ffn_dim,)
+    col_norms = W2.norm(dim=0)  # (ffn_dim,)
     importances = (row_norms * col_norms).tolist()
     return importances
 
@@ -220,6 +226,7 @@ def analyze_all_ffns(encoder, decoder):
 # ─────────────────────────────────────────────────────────────
 #  4. Query Pruning — Embedding Redundancy
 # ─────────────────────────────────────────────────────────────
+
 
 def analyze_query_redundancy(decoder, top_k_pairs=20):
     """
@@ -281,12 +288,16 @@ def analyze_query_redundancy(decoder, top_k_pairs=20):
 #  5. Segmentation Head Analysis
 # ─────────────────────────────────────────────────────────────
 
+
 def analyze_seg_head(seg_head):
     """Analyze segmentation head component importance."""
     results = {}
 
     # Cross-attend-prompt importance
-    if hasattr(seg_head, "cross_attend_prompt") and seg_head.cross_attend_prompt is not None:
+    if (
+        hasattr(seg_head, "cross_attend_prompt")
+        and seg_head.cross_attend_prompt is not None
+    ):
         ca = seg_head.cross_attend_prompt
         W_O = ca.out_proj.weight.data
         _, _, W_V = _extract_qkv(ca.in_proj_weight.data, 256)
@@ -299,7 +310,9 @@ def analyze_seg_head(seg_head):
     if hasattr(seg_head, "pixel_decoder"):
         pd = seg_head.pixel_decoder
         for i, conv in enumerate(pd.conv_layers):
-            results[f"pixel_decoder.conv_{i}_weight_norm"] = _frobenius(conv.weight.data)
+            results[f"pixel_decoder.conv_{i}_weight_norm"] = _frobenius(
+                conv.weight.data
+            )
         total_params = sum(p.numel() for p in pd.parameters())
         results["pixel_decoder_params"] = total_params
 
@@ -308,7 +321,9 @@ def analyze_seg_head(seg_head):
         mp = seg_head.mask_predictor
         if hasattr(mp, "mask_embed"):
             for i, layer in enumerate(mp.mask_embed.layers):
-                results[f"mask_embed.layer_{i}_weight_norm"] = _frobenius(layer.weight.data)
+                results[f"mask_embed.layer_{i}_weight_norm"] = _frobenius(
+                    layer.weight.data
+                )
         total_params = sum(p.numel() for p in mp.parameters())
         results["mask_predictor_params"] = total_params
 
@@ -331,6 +346,7 @@ def analyze_seg_head(seg_head):
 #  6. BoxRPB Analysis (significant decoder compute)
 # ─────────────────────────────────────────────────────────────
 
+
 def analyze_boxrpb(decoder):
     """Analyze boxRPB MLP weight norms — these are called every layer."""
     results = {}
@@ -348,6 +364,7 @@ def analyze_boxrpb(decoder):
 # ─────────────────────────────────────────────────────────────
 #  7. Component Parameter Count
 # ─────────────────────────────────────────────────────────────
+
 
 def count_parameters(model):
     """Detailed parameter breakdown."""
@@ -375,9 +392,17 @@ def count_parameters(model):
 #  FLOPs Estimation
 # ─────────────────────────────────────────────────────────────
 
-def estimate_flops(d_model=256, ffn_dim=2048, n_heads=8,
-                   enc_layers=6, dec_layers=6, n_queries=200,
-                   img_tokens=5184, text_tokens=15):
+
+def estimate_flops(
+    d_model=256,
+    ffn_dim=2048,
+    n_heads=8,
+    enc_layers=6,
+    dec_layers=6,
+    n_queries=200,
+    img_tokens=5184,
+    text_tokens=15,
+):
     """
     Rough FLOPs estimate for encoder + decoder (excluding backbone).
     Self-attention: 2 * seq^2 * d  (Q@K^T + attn@V)
@@ -387,12 +412,12 @@ def estimate_flops(d_model=256, ffn_dim=2048, n_heads=8,
 
     # --- Encoder (per layer) ---
     # Self-attention on image tokens: 2 * 2 * T^2 * d  (QK^T + AV)
-    enc_sa = 2 * 2 * img_tokens ** 2 * d_model
+    enc_sa = 2 * 2 * img_tokens**2 * d_model
     # Self-attention projections (Q, K, V, O): 4 * 2 * T * d^2
-    enc_sa_proj = 4 * 2 * img_tokens * d_model ** 2
+    enc_sa_proj = 4 * 2 * img_tokens * d_model**2
     # Cross-attention to text: 2 * 2 * T * text_tokens * d
     enc_ca = 2 * 2 * img_tokens * text_tokens * d_model
-    enc_ca_proj = 4 * 2 * img_tokens * d_model ** 2  # Q/K/V/O (applied on img side)
+    enc_ca_proj = 4 * 2 * img_tokens * d_model**2  # Q/K/V/O (applied on img side)
     # FFN: 2 * T * d * ffn + 2 * T * ffn * d
     enc_ffn = 2 * 2 * img_tokens * d_model * ffn_dim
 
@@ -407,26 +432,34 @@ def estimate_flops(d_model=256, ffn_dim=2048, n_heads=8,
 
     # --- Decoder (per layer) ---
     # Self-attention on queries
-    dec_sa = 2 * 2 * n_queries ** 2 * d_model
-    dec_sa_proj = 4 * 2 * n_queries * d_model ** 2
+    dec_sa = 2 * 2 * n_queries**2 * d_model
+    dec_sa_proj = 4 * 2 * n_queries * d_model**2
 
     # Cross-attention to text
     dec_ca_text = 2 * 2 * n_queries * text_tokens * d_model
-    dec_ca_text_proj = 4 * 2 * n_queries * d_model ** 2
+    dec_ca_text_proj = 4 * 2 * n_queries * d_model**2
 
     # Cross-attention to image (with boxRPB)
     dec_ca_img = 2 * 2 * n_queries * img_tokens * d_model
-    dec_ca_img_proj = 4 * 2 * n_queries * d_model ** 2
+    dec_ca_img_proj = 4 * 2 * n_queries * d_model**2
 
     # boxRPB compute: MLP on (Q * H + Q * W) positions, 2-layer MLP(2, d, n_heads)
-    H = W = int(img_tokens ** 0.5)  # ~72
+    H = W = int(img_tokens**0.5)  # ~72
     boxrpb = 2 * n_queries * (H + W) * 2 * d_model  # rough estimate
 
     # FFN
     dec_ffn = 2 * 2 * n_queries * d_model * ffn_dim
 
-    dec_per_layer = (dec_sa + dec_sa_proj + dec_ca_text + dec_ca_text_proj +
-                     dec_ca_img + dec_ca_img_proj + boxrpb + dec_ffn)
+    dec_per_layer = (
+        dec_sa
+        + dec_sa_proj
+        + dec_ca_text
+        + dec_ca_text_proj
+        + dec_ca_img
+        + dec_ca_img_proj
+        + boxrpb
+        + dec_ffn
+    )
     dec_total = dec_per_layer * dec_layers
 
     flops["dec_self_attn_per_layer"] = dec_sa + dec_sa_proj
@@ -444,6 +477,7 @@ def estimate_flops(d_model=256, ffn_dim=2048, n_heads=8,
 # ─────────────────────────────────────────────────────────────
 #  Printing
 # ─────────────────────────────────────────────────────────────
+
 
 def print_section(title):
     print(f"\n{'=' * 70}")
@@ -472,10 +506,11 @@ def print_layer_scores(title, scores, key="total_bi"):
 
     # Recommendation
     n = len(scores)
-    remove_candidates = [s["layer"] for s in ranked[:n // 2]]
-    keep_candidates = [s["layer"] for s in ranked[n // 2:]]
-    print(f"\n  Recommendation: keep layers {keep_candidates}, "
-          f"remove {remove_candidates}")
+    remove_candidates = [s["layer"] for s in ranked[: n // 2]]
+    keep_candidates = [s["layer"] for s in ranked[n // 2 :]]
+    print(
+        f"\n  Recommendation: keep layers {keep_candidates}, remove {remove_candidates}"
+    )
 
 
 def print_head_analysis(head_results, n_heads=8):
@@ -501,7 +536,7 @@ def print_head_analysis(head_results, n_heads=8):
         for h, imp in enumerate(imps):
             head_totals[h] += imp
         count += 1
-    print(f"\n  Avg importance per head index:")
+    print("\n  Avg importance per head index:")
     for h in range(n_heads):
         print(f"    Head {h}: {head_totals[h] / count:.2f}")
     weakest = sorted(range(n_heads), key=lambda h: head_totals[h])
@@ -524,20 +559,30 @@ def print_ffn_analysis(ffn_results, target_dim=None):
         pct_99 = (cum >= 0.99 * total).nonzero(as_tuple=True)[0][0].item() + 1
 
         print(f"\n  {name} (dim={dim}):")
-        print(f"    Top neuron: {sorted_imps[0].item():.3f}  "
-              f"Bottom: {sorted_imps[-1].item():.3f}  "
-              f"Ratio: {sorted_imps[0].item() / max(sorted_imps[-1].item(), 1e-8):.1f}x")
-        print(f"    Neurons for 90% importance: {pct_90}/{dim} "
-              f"({100 * pct_90 / dim:.0f}%)")
-        print(f"    Neurons for 95% importance: {pct_95}/{dim} "
-              f"({100 * pct_95 / dim:.0f}%)")
-        print(f"    Neurons for 99% importance: {pct_99}/{dim} "
-              f"({100 * pct_99 / dim:.0f}%)")
+        print(
+            f"    Top neuron: {sorted_imps[0].item():.3f}  "
+            f"Bottom: {sorted_imps[-1].item():.3f}  "
+            f"Ratio: {sorted_imps[0].item() / max(sorted_imps[-1].item(), 1e-8):.1f}x"
+        )
+        print(
+            f"    Neurons for 90% importance: {pct_90}/{dim} "
+            f"({100 * pct_90 / dim:.0f}%)"
+        )
+        print(
+            f"    Neurons for 95% importance: {pct_95}/{dim} "
+            f"({100 * pct_95 / dim:.0f}%)"
+        )
+        print(
+            f"    Neurons for 99% importance: {pct_99}/{dim} "
+            f"({100 * pct_99 / dim:.0f}%)"
+        )
 
         if target_dim:
             kept_imp = sorted_imps[:target_dim].sum().item()
-            print(f"    If pruned to {target_dim}: "
-                  f"retain {100 * kept_imp / total:.1f}% of importance")
+            print(
+                f"    If pruned to {target_dim}: "
+                f"retain {100 * kept_imp / total:.1f}% of importance"
+            )
 
 
 def print_query_analysis(query_results):
@@ -547,11 +592,13 @@ def print_query_analysis(query_results):
     print(f"  Max pairwise cosine similarity:  {query_results['max_sim']:.4f}")
     print(f"  Pairs with sim > 0.90: {query_results['high_sim_pairs_0.9']}")
     print(f"  Pairs with sim > 0.95: {query_results['very_high_sim_pairs_0.95']}")
-    print(f"  Clusters at threshold 0.85: {query_results['clusters_at_0.85']} "
-          f"(from 200 queries)")
+    print(
+        f"  Clusters at threshold 0.85: {query_results['clusters_at_0.85']} "
+        f"(from 200 queries)"
+    )
     print(f"  Largest cluster sizes: {query_results['cluster_sizes']}")
 
-    print(f"\n  Top-10 most similar query pairs:")
+    print("\n  Top-10 most similar query pairs:")
     for i, j, sim in query_results["top_pairs"][:10]:
         print(f"    Q{i:3d} <-> Q{j:3d}  sim={sim:.4f}")
 
@@ -580,17 +627,21 @@ def print_flops(flops):
             return f"{f / 1e9:.2f}G"
         return f"{f / 1e6:.1f}M"
 
-    print(f"\n  Encoder:")
+    print("\n  Encoder:")
     print(f"    Self-attention / layer: {fmt(flops['enc_self_attn_per_layer'])}")
     print(f"    Cross-attention / layer: {fmt(flops['enc_cross_attn_per_layer'])}")
     print(f"    FFN / layer:            {fmt(flops['enc_ffn_per_layer'])}")
     print(f"    Per layer total:        {fmt(flops['enc_per_layer'])}")
     print(f"    All {6} layers:          {fmt(flops['enc_total'])}")
 
-    print(f"\n  Decoder:")
+    print("\n  Decoder:")
     print(f"    Self-attention / layer:        {fmt(flops['dec_self_attn_per_layer'])}")
-    print(f"    Cross-attn text / layer:       {fmt(flops['dec_cross_attn_text_per_layer'])}")
-    print(f"    Cross-attn image / layer:      {fmt(flops['dec_cross_attn_img_per_layer'])}")
+    print(
+        f"    Cross-attn text / layer:       {fmt(flops['dec_cross_attn_text_per_layer'])}"
+    )
+    print(
+        f"    Cross-attn image / layer:      {fmt(flops['dec_cross_attn_img_per_layer'])}"
+    )
     print(f"    BoxRPB / layer:                {fmt(flops['dec_boxrpb_per_layer'])}")
     print(f"    FFN / layer:                   {fmt(flops['dec_ffn_per_layer'])}")
     print(f"    Per layer total:               {fmt(flops['dec_per_layer'])}")
@@ -607,8 +658,9 @@ def print_flops(flops):
     print(f"  Encoder self-attn is {sa_pct:.1f}% of encoder compute")
 
 
-def print_pruning_recommendations(enc_scores, dec_scores, head_results, ffn_results,
-                                  query_results, flops_baseline):
+def print_pruning_recommendations(
+    enc_scores, dec_scores, head_results, ffn_results, query_results, flops_baseline
+):
     print_section("PRUNING RECOMMENDATIONS SUMMARY")
 
     # Layer recommendations
@@ -616,10 +668,14 @@ def print_pruning_recommendations(enc_scores, dec_scores, head_results, ffn_resu
     dec_ranked = sorted(dec_scores, key=lambda x: x["total_bi"])
 
     print("\n  Layer Pruning:")
-    print(f"    Encoder: remove layers {[s['layer'] for s in enc_ranked[:2]]} "
-          f"(lowest BI), keep {[s['layer'] for s in enc_ranked[2:]]}")
-    print(f"    Decoder: remove layers {[s['layer'] for s in dec_ranked[:2]]} "
-          f"(lowest BI), keep {[s['layer'] for s in dec_ranked[2:]]}")
+    print(
+        f"    Encoder: remove layers {[s['layer'] for s in enc_ranked[:2]]} "
+        f"(lowest BI), keep {[s['layer'] for s in enc_ranked[2:]]}"
+    )
+    print(
+        f"    Decoder: remove layers {[s['layer'] for s in dec_ranked[:2]]} "
+        f"(lowest BI), keep {[s['layer'] for s in dec_ranked[2:]]}"
+    )
 
     # Head recommendations
     total_heads = 0
@@ -628,69 +684,75 @@ def print_pruning_recommendations(enc_scores, dec_scores, head_results, ffn_resu
         total_heads += len(imps)
         mn, mx = min(imps), max(imps)
         if mn > 0:
-            ratio = mx / mn
+            mx / mn
             # Heads with < 50% of max importance are prunable
             prunable_heads += sum(1 for imp in imps if imp < 0.5 * mx)
 
-    print(f"\n  Head Pruning:")
-    print(f"    {prunable_heads}/{total_heads} heads have <50% of max importance "
-          f"in their module")
-    print(f"    Recommendation: 8 -> 6 heads (prune 2 weakest per module)")
+    print("\n  Head Pruning:")
+    print(
+        f"    {prunable_heads}/{total_heads} heads have <50% of max importance "
+        f"in their module"
+    )
+    print("    Recommendation: 8 -> 6 heads (prune 2 weakest per module)")
 
     # FFN recommendations
-    print(f"\n  FFN Width Pruning:")
+    print("\n  FFN Width Pruning:")
     for name, imps in sorted(ffn_results.items()):
         imps_t = torch.tensor(imps)
         sorted_imps = imps_t.sort(descending=True).values
         total = sorted_imps.sum().item()
         kept_1536 = sorted_imps[:1536].sum().item()
         kept_1024 = sorted_imps[:1024].sum().item()
-        print(f"    {name}: 2048->1536 retains {100 * kept_1536 / total:.1f}%, "
-              f"2048->1024 retains {100 * kept_1024 / total:.1f}%")
+        print(
+            f"    {name}: 2048->1536 retains {100 * kept_1536 / total:.1f}%, "
+            f"2048->1024 retains {100 * kept_1024 / total:.1f}%"
+        )
 
     # Query recommendations
-    print(f"\n  Query Pruning:")
+    print("\n  Query Pruning:")
     n_clusters = query_results["clusters_at_0.85"]
     print(f"    {query_results['clusters_at_0.85']} distinct clusters at cosine 0.85")
     rec_queries = min(max(n_clusters, 64), 128)
     print(f"    Recommendation: 200 -> {rec_queries} queries")
 
     # Estimated speedup
-    print(f"\n  Estimated Speedup:")
+    print("\n  Estimated Speedup:")
 
     # Pruned FLOPs estimate
     pruned_flops = estimate_flops(
-        enc_layers=4, dec_layers=4, n_heads=6,
-        ffn_dim=1536, n_queries=rec_queries
+        enc_layers=4, dec_layers=4, n_heads=6, ffn_dim=1536, n_queries=rec_queries
     )
     speedup = flops_baseline["total"] / pruned_flops["total"]
-    print(f"    Baseline encoder+decoder: "
-          f"{flops_baseline['total'] / 1e9:.1f}G FLOPs")
-    print(f"    Pruned (4 enc, 4 dec, 6 heads, 1536 FFN, {rec_queries} queries): "
-          f"{pruned_flops['total'] / 1e9:.1f}G FLOPs")
+    print(f"    Baseline encoder+decoder: {flops_baseline['total'] / 1e9:.1f}G FLOPs")
+    print(
+        f"    Pruned (4 enc, 4 dec, 6 heads, 1536 FFN, {rec_queries} queries): "
+        f"{pruned_flops['total'] / 1e9:.1f}G FLOPs"
+    )
     print(f"    Theoretical speedup: {speedup:.2f}x")
 
     # With 3+3 layers
     aggressive_flops = estimate_flops(
-        enc_layers=3, dec_layers=3, n_heads=4,
-        ffn_dim=1024, n_queries=64
+        enc_layers=3, dec_layers=3, n_heads=4, ffn_dim=1024, n_queries=64
     )
     speedup_agg = flops_baseline["total"] / aggressive_flops["total"]
-    print(f"    Aggressive (3 enc, 3 dec, 4 heads, 1024 FFN, 64 queries): "
-          f"{aggressive_flops['total'] / 1e9:.1f}G FLOPs")
+    print(
+        f"    Aggressive (3 enc, 3 dec, 4 heads, 1024 FFN, 64 queries): "
+        f"{aggressive_flops['total'] / 1e9:.1f}G FLOPs"
+    )
     print(f"    Theoretical speedup: {speedup_agg:.2f}x")
 
     # Note about backbone
-    print(f"\n  Note: The ViT-H backbone (~1.93T FLOPs) dominates total model")
-    print(f"  latency. For maximum speedup, combine structural pruning with")
-    print(f"  backbone distillation (see scripts/distill.py).")
-    print(f"  Encoder+decoder pruning primarily helps multi-class inference")
-    print(f"  where the encoder/decoder run once per class.")
+    print("\n  Note: The ViT-H backbone (~1.93T FLOPs) dominates total model")
+    print("  latency. For maximum speedup, combine structural pruning with")
+    print("  backbone distillation (see scripts/distill.py).")
+    print("  Encoder+decoder pruning primarily helps multi-class inference")
+    print("  where the encoder/decoder run once per class.")
 
 
 # ─────────────────────────────────────────────────────────────
 #  Main
 # ─────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -698,24 +760,37 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Path to SAM3 checkpoint (default: download from HF)")
-    parser.add_argument("--device", type=str,
-                        default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--apply", action="store_true",
-                        help="Apply recommended pruning and save")
-    parser.add_argument("--output", type=str, default="pruned_sam3.pt",
-                        help="Output path for pruned model")
-    parser.add_argument("--enc-layers", type=int, default=None,
-                        help="Keep top-K encoder layers")
-    parser.add_argument("--dec-layers", type=int, default=None,
-                        help="Keep top-K decoder layers")
-    parser.add_argument("--heads", type=int, default=None,
-                        help="Keep top-K heads per module")
-    parser.add_argument("--ffn-dim", type=int, default=None,
-                        help="Target FFN intermediate dimension")
-    parser.add_argument("--queries", type=int, default=None,
-                        help="Keep top-K queries")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to SAM3 checkpoint (default: download from HF)",
+    )
+    parser.add_argument(
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="Apply recommended pruning and save"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="pruned_sam3.pt",
+        help="Output path for pruned model",
+    )
+    parser.add_argument(
+        "--enc-layers", type=int, default=None, help="Keep top-K encoder layers"
+    )
+    parser.add_argument(
+        "--dec-layers", type=int, default=None, help="Keep top-K decoder layers"
+    )
+    parser.add_argument(
+        "--heads", type=int, default=None, help="Keep top-K heads per module"
+    )
+    parser.add_argument(
+        "--ffn-dim", type=int, default=None, help="Target FFN intermediate dimension"
+    )
+    parser.add_argument("--queries", type=int, default=None, help="Keep top-K queries")
     args = parser.parse_args()
 
     # ── Load model ──
@@ -787,16 +862,21 @@ def main():
 
     # ── Summary recommendations ──
     print_pruning_recommendations(
-        enc_scores, dec_scores, head_results, ffn_results,
-        query_results, flops_baseline
+        enc_scores, dec_scores, head_results, ffn_results, query_results, flops_baseline
     )
 
     # ── Apply pruning ──
     if args.apply:
         print_section("APPLYING PRUNING")
         apply_pruning(
-            model, encoder, decoder, seg_head,
-            enc_scores, dec_scores, head_results, ffn_results,
+            model,
+            encoder,
+            decoder,
+            seg_head,
+            enc_scores,
+            dec_scores,
+            head_results,
+            ffn_results,
             query_results,
             enc_keep=args.enc_layers,
             dec_keep=args.dec_layers,
@@ -812,6 +892,7 @@ def main():
 # ─────────────────────────────────────────────────────────────
 #  Pruning Application
 # ─────────────────────────────────────────────────────────────
+
 
 def _prune_layers(module_list, scores, keep_n, key="total_bi"):
     """Remove lowest-scoring layers from a ModuleList."""
@@ -881,7 +962,7 @@ def _prune_queries(decoder, keep_n, query_results):
 
     # Use importance = distance from mean (diverse queries are more important)
     Q_float = Q.float()
-    Q_norm = Q_float / Q_float.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    Q_float / Q_float.norm(dim=1, keepdim=True).clamp(min=1e-8)
     sim_matrix = query_results["similarity_matrix"]
 
     # Greedy selection: pick most dissimilar queries
@@ -900,7 +981,9 @@ def _prune_queries(decoder, keep_n, query_results):
         selected.append(next_q)
 
     selected.sort()
-    print(f"    Selected query indices: {selected[:20]}{'...' if len(selected) > 20 else ''}")
+    print(
+        f"    Selected query indices: {selected[:20]}{'...' if len(selected) > 20 else ''}"
+    )
 
     # Update query embed
     new_embed = nn.Embedding(keep_n, Q.shape[1])
@@ -918,13 +1001,25 @@ def _prune_queries(decoder, keep_n, query_results):
     return selected
 
 
-def apply_pruning(model, encoder, decoder, seg_head,
-                  enc_scores, dec_scores, head_results, ffn_results,
-                  query_results,
-                  enc_keep=None, dec_keep=None, head_keep=None,
-                  ffn_target=None, query_keep=None,
-                  output_path="pruned_sam3.pt",
-                  d_model=256, n_heads=8):
+def apply_pruning(
+    model,
+    encoder,
+    decoder,
+    seg_head,
+    enc_scores,
+    dec_scores,
+    head_results,
+    ffn_results,
+    query_results,
+    enc_keep=None,
+    dec_keep=None,
+    head_keep=None,
+    ffn_target=None,
+    query_keep=None,
+    output_path="pruned_sam3.pt",
+    d_model=256,
+    n_heads=8,
+):
     """Apply structural pruning based on analysis results."""
 
     # Defaults
@@ -964,25 +1059,33 @@ def apply_pruning(model, encoder, decoder, seg_head,
                     continue
                 mapped_idx = enc_kept.index(layer_idx)
                 if "self_attn" in name:
-                    _prune_heads_in_attn(encoder.layers[mapped_idx].self_attn,
-                                         d_model, n_heads, keep)
+                    _prune_heads_in_attn(
+                        encoder.layers[mapped_idx].self_attn, d_model, n_heads, keep
+                    )
                 elif "cross_attn" in name:
-                    _prune_heads_in_attn(encoder.layers[mapped_idx].cross_attn_image,
-                                         d_model, n_heads, keep)
+                    _prune_heads_in_attn(
+                        encoder.layers[mapped_idx].cross_attn_image,
+                        d_model,
+                        n_heads,
+                        keep,
+                    )
             elif parts[0] == "dec":
                 layer_idx = int(parts[1])
                 if layer_idx not in dec_kept:
                     continue
                 mapped_idx = dec_kept.index(layer_idx)
                 if "self_attn" in name:
-                    _prune_heads_in_attn(decoder.layers[mapped_idx].self_attn,
-                                         d_model, n_heads, keep)
+                    _prune_heads_in_attn(
+                        decoder.layers[mapped_idx].self_attn, d_model, n_heads, keep
+                    )
                 elif "cross_attn_img" in name:
-                    _prune_heads_in_attn(decoder.layers[mapped_idx].cross_attn,
-                                         d_model, n_heads, keep)
+                    _prune_heads_in_attn(
+                        decoder.layers[mapped_idx].cross_attn, d_model, n_heads, keep
+                    )
                 elif "cross_attn_text" in name:
-                    _prune_heads_in_attn(decoder.layers[mapped_idx].ca_text,
-                                         d_model, n_heads, keep)
+                    _prune_heads_in_attn(
+                        decoder.layers[mapped_idx].ca_text, d_model, n_heads, keep
+                    )
 
     # 3. FFN pruning
     if ffn_target < 2048:
@@ -1002,8 +1105,11 @@ def apply_pruning(model, encoder, decoder, seg_head,
         _prune_queries(decoder, query_keep, query_results)
 
     # 5. Remove cross_attend_prompt from seg head (optional speedup)
-    if hasattr(seg_head, "cross_attend_prompt") and seg_head.cross_attend_prompt is not None:
-        print(f"\n  Removing seg_head.cross_attend_prompt")
+    if (
+        hasattr(seg_head, "cross_attend_prompt")
+        and seg_head.cross_attend_prompt is not None
+    ):
+        print("\n  Removing seg_head.cross_attend_prompt")
         seg_head.cross_attend_prompt = None
         seg_head.cross_attn_norm = None
 

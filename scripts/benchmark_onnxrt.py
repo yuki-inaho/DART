@@ -35,7 +35,9 @@ def cosine_similarity(a, b):
     ).item()
 
 
-def benchmark_provider(session, input_name, input_np, output_names, ref_dict, n_warmup, n_runs, label):
+def benchmark_provider(
+    session, input_name, input_np, output_names, ref_dict, n_warmup, n_runs, label
+):
     """Benchmark an ORT session and compute accuracy."""
     print(f"\n--- {label} ---")
 
@@ -66,7 +68,7 @@ def benchmark_provider(session, input_name, input_np, output_names, ref_dict, n_
     print(f"  P95: {p95:.1f}ms")
 
     # Accuracy
-    print(f"  Cosine similarity vs PyTorch FP32:")
+    print("  Cosine similarity vs PyTorch FP32:")
     for i, name in enumerate(output_names):
         key = f"fpn_{i}"
         if key in ref_dict:
@@ -88,7 +90,8 @@ def main():
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--runs", type=int, default=50)
     parser.add_argument(
-        "--providers", nargs="+",
+        "--providers",
+        nargs="+",
         default=["cuda", "cuda-fp16"],
         choices=["cuda", "cuda-fp16", "trt", "trt-fp16"],
         help="Providers to test",
@@ -96,22 +99,29 @@ def main():
     args = parser.parse_args()
 
     import onnxruntime as ort
+
     print(f"ONNX Runtime version: {ort.__version__}")
     print(f"Available providers: {ort.get_available_providers()}")
     print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # --- PyTorch reference ---
     print("\n--- PyTorch FP32 Reference ---")
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
     from torchvision.transforms import v2
 
+    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
+
     model = build_sam3_image_model(
-        device="cuda", checkpoint_path=args.checkpoint, eval_mode=True,
+        device="cuda",
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device="cuda", resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device="cuda",
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
 
     image = Image.open(args.image).convert("RGB")
@@ -135,6 +145,7 @@ def main():
 
     # --- Get output names from ONNX ---
     import onnx
+
     onnx_model = onnx.load(args.onnx)
     output_names = [o.name for o in onnx_model.graph.output]
     input_name = onnx_model.graph.input[0].name
@@ -151,15 +162,23 @@ def main():
                     args.onnx,
                     sess_options=sess_options,
                     providers=[
-                        ("CUDAExecutionProvider", {
-                            "device_id": 0,
-                            "arena_extend_strategy": "kSameAsRequested",
-                        }),
+                        (
+                            "CUDAExecutionProvider",
+                            {
+                                "device_id": 0,
+                                "arena_extend_strategy": "kSameAsRequested",
+                            },
+                        ),
                     ],
                 )
                 result = benchmark_provider(
-                    sess, input_name, input_np, output_names,
-                    ref_dict, args.warmup, args.runs,
+                    sess,
+                    input_name,
+                    input_np,
+                    output_names,
+                    ref_dict,
+                    args.warmup,
+                    args.runs,
                     "ORT CUDAExecutionProvider (FP32)",
                 )
                 results.append(result)
@@ -168,22 +187,32 @@ def main():
             elif provider == "cuda-fp16":
                 # ORT CUDA with graph optimization + FP16 conversion
                 sess_options = ort.SessionOptions()
-                sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                sess_options.graph_optimization_level = (
+                    ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                )
                 sess = ort.InferenceSession(
                     args.onnx,
                     sess_options=sess_options,
                     providers=[
-                        ("CUDAExecutionProvider", {
-                            "device_id": 0,
-                            "arena_extend_strategy": "kSameAsRequested",
-                        }),
+                        (
+                            "CUDAExecutionProvider",
+                            {
+                                "device_id": 0,
+                                "arena_extend_strategy": "kSameAsRequested",
+                            },
+                        ),
                     ],
                 )
                 # Run with FP16 input
                 input_fp16 = input_np.astype(np.float16).astype(np.float32)
                 result = benchmark_provider(
-                    sess, input_name, input_fp16, output_names,
-                    ref_dict, args.warmup, args.runs,
+                    sess,
+                    input_name,
+                    input_fp16,
+                    output_names,
+                    ref_dict,
+                    args.warmup,
+                    args.runs,
                     "ORT CUDAExecutionProvider (FP32 model, FP16 input)",
                 )
                 results.append(result)
@@ -195,18 +224,26 @@ def main():
                     args.onnx,
                     sess_options=sess_options,
                     providers=[
-                        ("TensorrtExecutionProvider", {
-                            "device_id": 0,
-                            "trt_fp16_enable": False,
-                            "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": "./ort_trt_cache",
-                        }),
+                        (
+                            "TensorrtExecutionProvider",
+                            {
+                                "device_id": 0,
+                                "trt_fp16_enable": False,
+                                "trt_engine_cache_enable": True,
+                                "trt_engine_cache_path": "./ort_trt_cache",
+                            },
+                        ),
                         ("CUDAExecutionProvider", {"device_id": 0}),
                     ],
                 )
                 result = benchmark_provider(
-                    sess, input_name, input_np, output_names,
-                    ref_dict, args.warmup, args.runs,
+                    sess,
+                    input_name,
+                    input_np,
+                    output_names,
+                    ref_dict,
+                    args.warmup,
+                    args.runs,
                     "ORT TensorrtExecutionProvider (FP32)",
                 )
                 results.append(result)
@@ -218,18 +255,26 @@ def main():
                     args.onnx,
                     sess_options=sess_options,
                     providers=[
-                        ("TensorrtExecutionProvider", {
-                            "device_id": 0,
-                            "trt_fp16_enable": True,
-                            "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": "./ort_trt_cache_fp16",
-                        }),
+                        (
+                            "TensorrtExecutionProvider",
+                            {
+                                "device_id": 0,
+                                "trt_fp16_enable": True,
+                                "trt_engine_cache_enable": True,
+                                "trt_engine_cache_path": "./ort_trt_cache_fp16",
+                            },
+                        ),
                         ("CUDAExecutionProvider", {"device_id": 0}),
                     ],
                 )
                 result = benchmark_provider(
-                    sess, input_name, input_np, output_names,
-                    ref_dict, args.warmup, args.runs,
+                    sess,
+                    input_name,
+                    input_np,
+                    output_names,
+                    ref_dict,
+                    args.warmup,
+                    args.runs,
                     "ORT TensorrtExecutionProvider (FP16)",
                 )
                 results.append(result)
@@ -238,16 +283,19 @@ def main():
         except Exception as e:
             print(f"\n  ERROR with {provider}: {e}")
             import traceback
+
             traceback.print_exc()
 
     # Summary
-    print(f"\n\n{'='*60}")
+    print(f"\n\n{'=' * 60}")
     print("SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"{'Provider':<50s} {'Avg':>7s} {'Min':>7s} {'P50':>7s}")
-    print(f"{'-'*50} {'-'*7} {'-'*7} {'-'*7}")
+    print(f"{'-' * 50} {'-' * 7} {'-' * 7} {'-' * 7}")
     for r in results:
-        print(f"{r['label']:<50s} {r['avg_ms']:>6.1f}ms {r['min_ms']:>6.1f}ms {r['p50']:>6.1f}ms")
+        print(
+            f"{r['label']:<50s} {r['avg_ms']:>6.1f}ms {r['min_ms']:>6.1f}ms {r['p50']:>6.1f}ms"
+        )
 
 
 if __name__ == "__main__":

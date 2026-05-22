@@ -76,6 +76,7 @@ def _build_efficient_backbone(backbone_type, model_name):
             efficientvit_backbone_b1,
             efficientvit_backbone_b2,
         )
+
         factory = {
             "b0": efficientvit_backbone_b0,
             "b1": efficientvit_backbone_b1,
@@ -101,10 +102,14 @@ def _build_efficient_backbone(backbone_type, model_name):
 
     elif backbone_type == "repvit":
         from sam3.backbones.repvit import repvit_m0_9, repvit_m1_1, repvit_m2_3
+
         factory = {
-            "m0.9": repvit_m0_9, "m0_9": repvit_m0_9,
-            "m1.1": repvit_m1_1, "m1_1": repvit_m1_1,
-            "m2.3": repvit_m2_3, "m2_3": repvit_m2_3,
+            "m0.9": repvit_m0_9,
+            "m0_9": repvit_m0_9,
+            "m1.1": repvit_m1_1,
+            "m1_1": repvit_m1_1,
+            "m2.3": repvit_m2_3,
+            "m2_3": repvit_m2_3,
         }
         if model_name not in factory:
             raise ValueError(f"Unknown RepViT model: {model_name}")
@@ -130,8 +135,11 @@ def _build_efficient_backbone(backbone_type, model_name):
 
     elif backbone_type == "tinyvit":
         from sam3.backbones.tiny_vit import (
-            tiny_vit_5m_224, tiny_vit_11m_224, tiny_vit_21m_224,
+            tiny_vit_5m_224,
+            tiny_vit_11m_224,
+            tiny_vit_21m_224,
         )
+
         factory = {
             "5m": tiny_vit_5m_224,
             "11m": tiny_vit_11m_224,
@@ -152,7 +160,7 @@ def _build_efficient_backbone(backbone_type, model_name):
                 for layer in self.model.layers:
                     x = layer(x)
                 B, L, C = x.shape
-                side = int(L ** 0.5)
+                side = int(L**0.5)
                 x = x.view(B, side, side, C).permute(0, 3, 1, 2).contiguous()
                 return x
 
@@ -205,7 +213,8 @@ def build_efficientsam3_model(
 
     position_encoding = _create_position_encoding(precompute_resolution=1008)
     vision_encoder = _create_vit_neck(
-        position_encoding, trunk,
+        position_encoding,
+        trunk,
         enable_inst_interactivity=enable_inst_interactivity,
     )
 
@@ -220,17 +229,22 @@ def build_efficientsam3_model(
     input_geometry_encoder = _create_geometry_encoder()
 
     if enable_inst_interactivity:
-        from sam3.model_builder import build_tracker
         from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
+        from sam3.model_builder import build_tracker
+
         sam3_pvs_base = build_tracker(apply_temporal_disambiguation=False)
         inst_predictor = SAM3InteractiveImagePredictor(sam3_pvs_base)
     else:
         inst_predictor = None
 
     model = _create_sam3_model(
-        backbone, transformer, input_geometry_encoder,
-        segmentation_head=None, dot_prod_scoring=dot_prod_scoring,
-        inst_interactive_predictor=inst_predictor, eval_mode=eval_mode,
+        backbone,
+        transformer,
+        input_geometry_encoder,
+        segmentation_head=None,
+        dot_prod_scoring=dot_prod_scoring,
+        inst_interactive_predictor=inst_predictor,
+        eval_mode=eval_mode,
     )
 
     if checkpoint_path:

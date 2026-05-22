@@ -3,7 +3,6 @@
 # pyre-unsafe
 
 import math
-from typing import Optional
 
 import torch
 from torch import nn
@@ -20,8 +19,8 @@ class PositionEmbeddingSine(nn.Module):
         num_pos_feats,
         temperature: int = 10000,
         normalize: bool = True,
-        scale: Optional[float] = None,
-        precompute_resolution: Optional[int] = None,
+        scale: float | None = None,
+        precompute_resolution: int | None = None,
     ):
         super().__init__()
         assert num_pos_feats % 2 == 0, "Expecting even model width"
@@ -51,18 +50,16 @@ class PositionEmbeddingSine(nn.Module):
         if precompute_resolution is not None:
             vit_size = precompute_resolution // 14  # 72 for 1008px
             precompute_sizes = [
-                (vit_size * 4, vit_size * 4),    # FPN 4.0x -> 288
-                (vit_size * 2, vit_size * 2),    # FPN 2.0x -> 144
-                (vit_size, vit_size),            # FPN 1.0x -> 72
+                (vit_size * 4, vit_size * 4),  # FPN 4.0x -> 288
+                (vit_size * 2, vit_size * 2),  # FPN 2.0x -> 144
+                (vit_size, vit_size),  # FPN 1.0x -> 72
                 (vit_size // 2, vit_size // 2),  # FPN 0.5x -> 36
             ]
             for size in precompute_sizes:
-                tensors = torch.zeros((1, 1) + size, device="cpu")
+                tensors = torch.zeros((1, 1, *size), device="cpu")
                 self.forward(tensors)
                 buf = self.cache[size].clone().detach()
-                self.register_buffer(
-                    f"pos_{size[0]}x{size[1]}", buf, persistent=False
-                )
+                self.register_buffer(f"pos_{size[0]}x{size[1]}", buf, persistent=False)
             # Clear dict cache — lookups now go through registered buffers
             self.cache.clear()
 
@@ -86,7 +83,7 @@ class PositionEmbeddingSine(nn.Module):
                 continue  # Already precomputed
             buf = next(self.buffers(), None)
             device = buf.device if buf is not None else "cpu"
-            dummy = torch.zeros((1, 1) + size, device=device)
+            dummy = torch.zeros((1, 1, *size), device=device)
             self.forward(dummy)
             buf = self.cache[size].clone().detach()
             self.register_buffer(buf_name, buf, persistent=False)

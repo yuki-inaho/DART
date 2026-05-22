@@ -11,18 +11,17 @@ graph structure TRT sees.
 """
 
 import sys
-import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-import numpy as np
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import tensorrt as trt
+
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
-
-import tensorrt as trt
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = "cuda"
@@ -30,6 +29,7 @@ DEVICE = "cuda"
 
 class NBlockWrapper(nn.Module):
     """Wraps N blocks of the ViT trunk for ONNX export."""
+
     def __init__(self, blocks):
         super().__init__()
         self.blocks = nn.ModuleList(blocks)
@@ -42,6 +42,7 @@ class NBlockWrapper(nn.Module):
 
 class NBlockWithRoPEWrapper(nn.Module):
     """Wraps N blocks with RoPE support for ONNX export."""
+
     def __init__(self, trunk, num_blocks):
         super().__init__()
         self.blocks = nn.ModuleList(trunk.blocks[:num_blocks])
@@ -56,6 +57,7 @@ class NBlockWithRoPEWrapper(nn.Module):
 
 class FullTrunkWrapper(nn.Module):
     """Wraps the full backbone forward up to FPN."""
+
     def __init__(self, backbone, num_blocks=None):
         super().__init__()
         self.backbone = backbone
@@ -69,6 +71,7 @@ class FullTrunkWrapper(nn.Module):
 
 class TrunkOnlyWrapper(nn.Module):
     """Wraps just the ViT trunk (patch_embed + pos + blocks)."""
+
     def __init__(self, trunk, num_blocks=None):
         super().__init__()
         self.trunk = trunk
@@ -86,7 +89,9 @@ class TrunkOnlyWrapper(nn.Module):
 def build_trt_engine(onnx_path, fp16=True):
     """Build TRT engine from ONNX."""
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    )
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -138,20 +143,28 @@ def test_blocks_exported(model, num_blocks_list):
     dummy_img = torch.randn(1, 3, 1008, 1008, device=DEVICE)
     with torch.inference_mode():
         from sam3.model.vitdet import get_abs_pos
+
         x_input = trunk.patch_embed(dummy_img)
         h, w = x_input.shape[1], x_input.shape[2]
         if trunk.pos_embed is not None:
             x_input = x_input + get_abs_pos(
-                trunk.pos_embed, trunk.pretrain_use_cls_token,
-                (h, w), trunk.retain_cls_token, tiling=trunk.tile_abs_pos,
+                trunk.pos_embed,
+                trunk.pretrain_use_cls_token,
+                (h, w),
+                trunk.retain_cls_token,
+                tiling=trunk.tile_abs_pos,
             )
-        if hasattr(trunk, 'ln_pre') and trunk.ln_pre is not None:
+        if hasattr(trunk, "ln_pre") and trunk.ln_pre is not None:
             x_input = trunk.ln_pre(x_input)
 
-    print(f"  Trunk input shape: {list(x_input.shape)}, range: [{x_input.min():.2f}, {x_input.max():.2f}]")
+    print(
+        f"  Trunk input shape: {list(x_input.shape)}, range: [{x_input.min():.2f}, {x_input.max():.2f}]"
+    )
 
-    print(f"\n  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Out absmax':>11s}")
+    print(
+        f"\n  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Out absmax':>11s}"
+    )
     print("  " + "-" * 80)
 
     for num_blocks in num_blocks_list:
@@ -187,7 +200,7 @@ def test_blocks_exported(model, num_blocks_list):
 
         # PyTorch FP16 reference
         with torch.inference_mode():
-            wrapper_half = TrunkOnlyWrapper(trunk, num_blocks=num_blocks)
+            TrunkOnlyWrapper(trunk, num_blocks=num_blocks)
             # Run blocks in half precision
             x_half = x_input.half()
             for i, block in enumerate(trunk.blocks):
@@ -215,8 +228,10 @@ def test_blocks_exported(model, num_blocks_list):
             continue
 
         out_max = Y_fp32.abs().max().item()
-        print(f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {out_max:>11.2f}")
+        print(
+            f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {out_max:>11.2f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -235,18 +250,24 @@ def test_blocks_without_rope(model, num_blocks_list):
     dummy_img = torch.randn(1, 3, 1008, 1008, device=DEVICE)
     with torch.inference_mode():
         from sam3.model.vitdet import get_abs_pos
+
         x_input = trunk.patch_embed(dummy_img)
         h, w = x_input.shape[1], x_input.shape[2]
         if trunk.pos_embed is not None:
             x_input = x_input + get_abs_pos(
-                trunk.pos_embed, trunk.pretrain_use_cls_token,
-                (h, w), trunk.retain_cls_token, tiling=trunk.tile_abs_pos,
+                trunk.pos_embed,
+                trunk.pretrain_use_cls_token,
+                (h, w),
+                trunk.retain_cls_token,
+                tiling=trunk.tile_abs_pos,
             )
-        if hasattr(trunk, 'ln_pre') and trunk.ln_pre is not None:
+        if hasattr(trunk, "ln_pre") and trunk.ln_pre is not None:
             x_input = trunk.ln_pre(x_input)
 
-    print(f"\n  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}")
+    print(
+        f"\n  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s}"
+    )
     print("  " + "-" * 65)
 
     for num_blocks in num_blocks_list:
@@ -305,22 +326,26 @@ def test_blocks_without_rope(model, num_blocks_list):
             Path(onnx_path).unlink(missing_ok=True)
             continue
 
-        print(f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f}")
+        print(
+            f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
     # Restore RoPE
     for block in trunk.blocks:
         attn = block.attn
-        if hasattr(attn, '_orig_apply_rope'):
+        if hasattr(attn, "_orig_apply_rope"):
             attn._apply_rope = attn._orig_apply_rope
 
 
 def main():
     print("Loading model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
 
     # Test 1: Real blocks exported via torch.onnx.export

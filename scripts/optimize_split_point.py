@@ -61,25 +61,32 @@ def main():
     parser.add_argument("--checkpoint", default="sam3.pt")
     parser.add_argument("--image", default="x.jpg")
     parser.add_argument(
-        "--enc-dec-ms", type=float, default=None,
+        "--enc-dec-ms",
+        type=float,
+        default=None,
         help="Enc-dec cost in ms (default: auto-measure or use --trt-engine)",
     )
     parser.add_argument(
-        "--trt-engine", default=None,
+        "--trt-engine",
+        default=None,
         help="TRT enc-dec engine path for measuring enc-dec cost",
     )
     parser.add_argument(
-        "--classes", nargs="+",
+        "--classes",
+        nargs="+",
         default=["person", "car", "bicycle", "dog"],
     )
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--runs", type=int, default=30)
     parser.add_argument(
-        "--compile", action="store_true", default=True,
+        "--compile",
+        action="store_true",
+        default=True,
         help="Use torch.compile (default: True)",
     )
     parser.add_argument(
-        "--no-compile", action="store_true",
+        "--no-compile",
+        action="store_true",
         help="Disable torch.compile (use eager FP16)",
     )
     args = parser.parse_args()
@@ -97,16 +104,21 @@ def main():
     from PIL import Image
     from torchvision.transforms import v2
 
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
 
     print("\nLoading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
     predictor.set_classes(args.classes)
 
@@ -143,7 +155,9 @@ def main():
         N = len(args.classes)
 
         trt_enc_dec = TRTEncoderDecoder(
-            engine_path=args.trt_engine, max_classes=4, device=device,
+            engine_path=args.trt_engine,
+            max_classes=4,
+            device=device,
         )
 
         def trt_fn():
@@ -190,8 +204,10 @@ def main():
                 prompt_pos = torch.zeros_like(prompt)
 
                 memory = compiled_encoder(
-                    src=batched_img, src_key_padding_mask=None,
-                    src_pos=batched_pos, prompt=prompt,
+                    src=batched_img,
+                    src_key_padding_mask=None,
+                    src_pos=batched_pos,
+                    prompt=prompt,
                     prompt_pos=prompt_pos,
                     prompt_key_padding_mask=prompt_mask,
                     feat_sizes=vis_feat_sizes,
@@ -199,14 +215,18 @@ def main():
                 query_embed = decoder.query_embed.weight
                 tgt = query_embed.unsqueeze(1).expand(-1, N, -1)
                 hs, ref_boxes, _, _ = compiled_decoder(
-                    tgt=tgt, memory=memory["memory"],
+                    tgt=tgt,
+                    memory=memory["memory"],
                     memory_key_padding_mask=memory["padding_mask"],
-                    pos=memory["pos_embed"], reference_boxes=None,
+                    pos=memory["pos_embed"],
+                    reference_boxes=None,
                     level_start_index=memory["level_start_index"],
                     spatial_shapes=memory["spatial_shapes"],
                     valid_ratios=memory["valid_ratios"],
-                    tgt_mask=None, memory_text=prompt,
-                    text_attention_mask=prompt_mask, apply_dac=False,
+                    tgt_mask=None,
+                    memory_text=prompt,
+                    text_attention_mask=prompt_mask,
+                    apply_dac=False,
                 )
                 hs = hs.transpose(1, 2)
                 ref_boxes = ref_boxes.transpose(1, 2)
@@ -229,16 +249,16 @@ def main():
 
     if not enc_dec_costs:
         enc_dec_costs["default-estimate"] = 14.0
-        print(f"  Using default enc-dec estimate: 14.0ms")
+        print("  Using default enc-dec estimate: 14.0ms")
 
     print(f"\n  Enc-dec costs: {enc_dec_costs}")
 
     # ---------------------------------------------------------------
     # Benchmark each split point
     # ---------------------------------------------------------------
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Benchmarking backbone split points (split = # blocks in Part 1)")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # We need to test split points from 1 to 31 (0 = no blocks in part1, 32 = no blocks in part2)
     # Part2 must include block 31 (the last global attention block) for output collection
@@ -250,12 +270,14 @@ def main():
             def fn():
                 with torch.autocast("cuda", dtype=torch.float16):
                     return backbone.forward_image_part1(img_tensor, split_block=s)
+
             return fn
 
         def make_part2_fn(s):
             def fn():
                 with torch.autocast("cuda", dtype=torch.float16):
                     return backbone.forward_image_part2(inter, split_block=s)
+
             return fn
 
         if use_compile:
@@ -297,12 +319,18 @@ def main():
         is_global = split in global_attn_blocks
         marker = " *" if is_global else ""
 
-        split_results.append({
-            "split": split,
-            "p1_avg": p1_avg, "p1_min": p1_min, "p1_p50": p1_p50,
-            "p2_avg": p2_avg, "p2_min": p2_min, "p2_p50": p2_p50,
-            "is_global": is_global,
-        })
+        split_results.append(
+            {
+                "split": split,
+                "p1_avg": p1_avg,
+                "p1_min": p1_min,
+                "p1_p50": p1_p50,
+                "p2_avg": p2_avg,
+                "p2_min": p2_min,
+                "p2_p50": p2_p50,
+                "is_global": is_global,
+            }
+        )
 
         print(
             f"  split={split:2d}{marker:2s}  "
@@ -314,9 +342,9 @@ def main():
     # ---------------------------------------------------------------
     # Find optimal split for each enc-dec cost
     # ---------------------------------------------------------------
-    print(f"\n\n{'='*80}")
+    print(f"\n\n{'=' * 80}")
     print("OPTIMIZATION RESULTS")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     # Also compute full backbone time
     def full_backbone_fn():
@@ -340,7 +368,9 @@ def main():
             full_backbone_fn, args.warmup, args.runs
         )
 
-    print(f"\n  Full backbone: avg={full_avg:.1f}ms  min={full_min:.1f}ms  p50={full_p50:.1f}ms")
+    print(
+        f"\n  Full backbone: avg={full_avg:.1f}ms  min={full_min:.1f}ms  p50={full_p50:.1f}ms"
+    )
 
     for enc_label, enc_dec_ms in enc_dec_costs.items():
         print(f"\n  --- Enc-dec: {enc_label} = {enc_dec_ms:.1f}ms ---")
@@ -349,15 +379,19 @@ def main():
         # Current (no split): max(full_backbone, enc_dec)
         current_frame = max(full_p50, enc_dec_ms)
         current_fps = 1000.0 / current_frame
-        print(f"  Current (no split): {current_frame:.1f}ms/frame = {current_fps:.1f} FPS")
+        print(
+            f"  Current (no split): {current_frame:.1f}ms/frame = {current_fps:.1f} FPS"
+        )
 
         # For each split point, compute pipeline frame time
         best_split = None
         best_frame = float("inf")
 
         print()
-        print(f"  {'split':>5s}  {'part1':>7s}  {'part2+enc_dec':>13s}  {'frame_time':>10s}  {'FPS':>6s}  {'speedup':>7s}")
-        print(f"  {'-'*5}  {'-'*7}  {'-'*13}  {'-'*10}  {'-'*6}  {'-'*7}")
+        print(
+            f"  {'split':>5s}  {'part1':>7s}  {'part2+enc_dec':>13s}  {'frame_time':>10s}  {'FPS':>6s}  {'speedup':>7s}"
+        )
+        print(f"  {'-' * 5}  {'-' * 7}  {'-' * 13}  {'-' * 10}  {'-' * 6}  {'-' * 7}")
 
         for r in split_results:
             s = r["split"]
@@ -372,7 +406,9 @@ def main():
                 best_frame = frame_time
                 best_split = s
 
-            indicator = " <-- BEST" if s == best_split and frame_time == best_frame else ""
+            indicator = (
+                " <-- BEST" if s == best_split and frame_time == best_frame else ""
+            )
             print(
                 f"  {s:5d}{marker:2s} {p1:7.1f}ms  {p2_plus_enc:10.1f}ms  "
                 f"{frame_time:7.1f}ms  {fps:6.1f}  {speedup:6.2f}x{indicator}"
@@ -383,11 +419,15 @@ def main():
         improvement = (best_fps - current_fps) / current_fps * 100
 
         print(f"\n  OPTIMAL: split_block={best_split}")
-        print(f"    Part 1 (blocks 0-{best_split-1}): {best_r['p1_p50']:.1f}ms")
-        print(f"    Part 2 (blocks {best_split}-31) + FPN + enc-dec: "
-              f"{best_r['p2_p50']:.1f} + {enc_dec_ms:.1f} = {best_r['p2_p50'] + enc_dec_ms:.1f}ms")
-        print(f"    Frame time: {best_frame:.1f}ms = {best_fps:.1f} FPS "
-              f"(+{improvement:.0f}% vs current {current_fps:.1f} FPS)")
+        print(f"    Part 1 (blocks 0-{best_split - 1}): {best_r['p1_p50']:.1f}ms")
+        print(
+            f"    Part 2 (blocks {best_split}-31) + FPN + enc-dec: "
+            f"{best_r['p2_p50']:.1f} + {enc_dec_ms:.1f} = {best_r['p2_p50'] + enc_dec_ms:.1f}ms"
+        )
+        print(
+            f"    Frame time: {best_frame:.1f}ms = {best_fps:.1f} FPS "
+            f"(+{improvement:.0f}% vs current {current_fps:.1f} FPS)"
+        )
 
 
 if __name__ == "__main__":

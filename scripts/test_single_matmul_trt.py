@@ -6,10 +6,10 @@ engines, and compares against PyTorch to isolate where precision is lost.
 """
 
 import sys
-import time
-import torch
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -42,7 +42,9 @@ def make_matmul_onnx(M, K, N, output_path, weight_data=None):
     return weight_data
 
 
-def make_layernorm_matmul_onnx(N, C, out_C, output_path, weight_data=None, ln_weight=None, ln_bias=None):
+def make_layernorm_matmul_onnx(
+    N, C, out_C, output_path, weight_data=None, ln_weight=None, ln_bias=None
+):
     """Create ONNX with: Y = MatMul(LayerNorm(X), W)
     X:(1, N, C), W:(C, out_C), Y:(1, N, out_C)"""
     if weight_data is None:
@@ -59,8 +61,13 @@ def make_layernorm_matmul_onnx(N, C, out_C, output_path, weight_data=None, ln_we
     LN_W = helper.make_tensor("ln_weight", TensorProto.FLOAT, [C], ln_weight.flatten())
     LN_B = helper.make_tensor("ln_bias", TensorProto.FLOAT, [C], ln_bias.flatten())
 
-    ln = helper.make_node("LayerNormalization", ["X", "ln_weight", "ln_bias"], ["ln_out"],
-                          axis=-1, epsilon=1e-6)
+    ln = helper.make_node(
+        "LayerNormalization",
+        ["X", "ln_weight", "ln_bias"],
+        ["ln_out"],
+        axis=-1,
+        epsilon=1e-6,
+    )
     matmul = helper.make_node("MatMul", ["ln_out", "W"], ["Y"])
     graph = helper.make_graph([ln, matmul], "ln_matmul_test", [X], [Y], [W, LN_W, LN_B])
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
@@ -117,16 +124,18 @@ def build_and_run_trt(onnx_path, input_tensor, fp16=True):
 def test_single_matmul():
     """Test a single MatMul in TRT FP16 vs PyTorch FP16."""
     print("\n  Single MatMul tests (Y = X @ W):")
-    print(f"  {'Shape':>25s} | {'TRT FP16 cos':>12s} | {'TRT FP32 cos':>12s} | {'PT FP16 cos':>12s} | {'TRT FP16 max_diff':>18s}")
+    print(
+        f"  {'Shape':>25s} | {'TRT FP16 cos':>12s} | {'TRT FP32 cos':>12s} | {'PT FP16 cos':>12s} | {'TRT FP16 max_diff':>18s}"
+    )
     print("  " + "-" * 95)
 
     for M, K, N, label in [
-        (576, 64, 576, "attn_qk (windowed)"),      # Windowed attention Q@K^T
-        (5184, 64, 5184, "attn_qk (global)"),       # Global attention Q@K^T
-        (5184, 1024, 3072, "qkv_projection"),        # QKV projection
-        (5184, 1024, 1024, "out_projection"),        # Output projection
-        (5184, 1024, 4736, "mlp_fc1"),               # MLP first layer
-        (5184, 4736, 1024, "mlp_fc2"),               # MLP second layer
+        (576, 64, 576, "attn_qk (windowed)"),  # Windowed attention Q@K^T
+        (5184, 64, 5184, "attn_qk (global)"),  # Global attention Q@K^T
+        (5184, 1024, 3072, "qkv_projection"),  # QKV projection
+        (5184, 1024, 1024, "out_projection"),  # Output projection
+        (5184, 1024, 4736, "mlp_fc1"),  # MLP first layer
+        (5184, 4736, 1024, "mlp_fc2"),  # MLP second layer
     ]:
         onnx_path = f"test_matmul_{label.replace(' ', '_').replace('(', '').replace(')', '')}.onnx"
         W = make_matmul_onnx(M, K, N, onnx_path)
@@ -160,7 +169,9 @@ def test_single_matmul():
             Y_trt_fp32.flatten().unsqueeze(0),
         ).item()
 
-        print(f"  {f'{M}x{K} @ {K}x{N} ({label})':<25s} | {trt16_cos:>12.6f} | {trt32_cos:>12.6f} | {pt_cos:>12.6f} | {trt16_diff:>18.4f}")
+        print(
+            f"  {f'{M}x{K} @ {K}x{N} ({label})':<25s} | {trt16_cos:>12.6f} | {trt32_cos:>12.6f} | {pt_cos:>12.6f} | {trt16_diff:>18.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -168,7 +179,9 @@ def test_single_matmul():
 def test_layernorm_plus_matmul():
     """Test LayerNorm -> MatMul chain in TRT FP16."""
     print("\n  LayerNorm + MatMul chain tests:")
-    print(f"  {'Shape':>25s} | {'TRT FP16 cos':>12s} | {'TRT FP32 cos':>12s} | {'PT FP16 cos':>12s}")
+    print(
+        f"  {'Shape':>25s} | {'TRT FP16 cos':>12s} | {'TRT FP32 cos':>12s} | {'PT FP16 cos':>12s}"
+    )
     print("  " + "-" * 75)
 
     for N, C, out_C, label in [
@@ -207,7 +220,9 @@ def test_layernorm_plus_matmul():
             Y_trt32.flatten().unsqueeze(0),
         ).item()
 
-        print(f"  {f'LN({N},{C})+MM({C},{out_C}) [{label}]':<25s} | {trt16_cos:>12.6f} | {trt32_cos:>12.6f} | {pt_cos:>12.6f}")
+        print(
+            f"  {f'LN({N},{C})+MM({C},{out_C}) [{label}]':<25s} | {trt16_cos:>12.6f} | {trt32_cos:>12.6f} | {pt_cos:>12.6f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 

@@ -17,9 +17,10 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as F
 import torchvision.transforms.v2.functional as Fv2
 from PIL import Image as PILImage
+from torchvision.transforms import InterpolationMode
+
 from sam3.model.box_ops import box_xyxy_to_cxcywh, masks_to_boxes
 from sam3.train.data.sam3_image_dataset import Datapoint
-from torchvision.transforms import InterpolationMode
 
 
 def crop(
@@ -32,7 +33,7 @@ def crop(
     recompute_box_from_mask=False,
 ):
     if v2:
-        rtop, rleft, rheight, rwidth = (int(round(r)) for r in region)
+        rtop, rleft, rheight, rwidth = (round(r) for r in region)
         datapoint.images[index].data = Fv2.crop(
             datapoint.images[index].data,
             top=rtop,
@@ -115,7 +116,7 @@ def crop(
 def hflip(datapoint, index):
     datapoint.images[index].data = F.hflip(datapoint.images[index].data)
 
-    w, h = datapoint.images[index].data.size
+    w, _h = datapoint.images[index].data.size
     for obj in datapoint.images[index].objects:
         boxes = obj.bbox.view(1, 4)
         boxes = boxes[:, [2, 1, 0, 3]] * torch.as_tensor(
@@ -153,11 +154,11 @@ def get_size_with_aspect_ratio(image_size, size, max_size=None):
         return (h, w)
 
     if w < h:
-        ow = int(round(size))
-        oh = int(round(size * h / w))
+        ow = round(size)
+        oh = round(size * h / w)
     else:
-        oh = int(round(size))
-        ow = int(round(size * w / h))
+        oh = round(size)
+        ow = round(size * w / h)
 
     return (oh, ow)
 
@@ -545,8 +546,8 @@ class CenterCropAPI:
 
     def _sample_crop(self, image_width, image_height):
         crop_height, crop_width = self.size
-        crop_top = int(round((image_height - crop_height) / 2.0))
-        crop_left = int(round((image_width - crop_width) / 2.0))
+        crop_top = round((image_height - crop_height) / 2.0)
+        crop_left = round((image_width - crop_width) / 2.0)
         return crop_top, crop_left, crop_height, crop_width
 
     def __call__(self, datapoint, **kwargs):
@@ -1244,9 +1245,9 @@ class ResizeToMaxIfAbove:
             return datapoint
         elif height >= width:
             new_height = self.max_size
-            new_width = int(round(self.max_size * width / height))
+            new_width = round(self.max_size * width / height)
         else:
-            new_height = int(round(self.max_size * height / width))
+            new_height = round(self.max_size * height / width)
             new_width = self.max_size
 
         size = new_height, new_width
@@ -1379,8 +1380,8 @@ class LargeScaleJitter:
             # Compute the dimensions of the jittered crop
             original_width, original_height = img.data.size
             target_area = original_width * original_height * scale_factor
-            crop_width = int(round((target_area * aspect_ratio) ** 0.5))
-            crop_height = int(round((target_area / aspect_ratio) ** 0.5))
+            crop_width = round((target_area * aspect_ratio) ** 0.5)
+            crop_height = round((target_area / aspect_ratio) ** 0.5)
 
             # Randomly select the top-left corner of the crop
             crop_x = random.randint(0, max(0, original_width - crop_width))

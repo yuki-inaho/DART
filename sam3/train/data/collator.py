@@ -2,10 +2,11 @@
 
 # pyre-unsafe
 
-from dataclasses import dataclass, field as field_ptr_behaviour, fields, is_dataclass
-from typing import Any, get_args, get_origin, List, Union
+from dataclasses import fields, is_dataclass
+from typing import Any, List, Union, get_args, get_origin
 
 import torch
+
 from sam3.model.data_misc import (
     BatchedDatapoint,
     BatchedFindTarget,
@@ -14,7 +15,6 @@ from sam3.model.data_misc import (
 )
 
 from .sam3_image_dataset import Datapoint
-
 
 MyTensor = Union[torch.Tensor, List[Any]]
 

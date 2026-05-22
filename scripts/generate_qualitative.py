@@ -17,9 +17,7 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
 
-import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
@@ -36,19 +34,19 @@ RESOLUTION = 1008
 DEFAULT_CLASSES = ["person", "car", "dog", "bicycle", "chair", "cat"]
 
 # Minimum annotation criteria for "interesting" images
-MIN_CATEGORIES = 3   # image must have objects from >= 3 of our target classes
-MIN_OBJECTS = 5       # image must have >= 5 annotated objects total
+MIN_CATEGORIES = 3  # image must have objects from >= 3 of our target classes
+MIN_OBJECTS = 5  # image must have >= 5 annotated objects total
 
 # ── Color palette (matches paper style, high contrast on photos) ──────────
 COLORS = [
-    (230,  25,  75),  # red       — person
-    (  0, 130, 200),  # blue      — car
-    (245, 130,  48),  # orange    — dog
-    ( 60, 180,  75),  # green     — bicycle
-    (145,  30, 180),  # purple    — chair
-    ( 70, 240, 240),  # cyan      — cat
-    (255, 225,  25),  # yellow
-    (240,  50, 230),  # magenta
+    (230, 25, 75),  # red       — person
+    (0, 130, 200),  # blue      — car
+    (245, 130, 48),  # orange    — dog
+    (60, 180, 75),  # green     — bicycle
+    (145, 30, 180),  # purple    — chair
+    (70, 240, 240),  # cyan      — cat
+    (255, 225, 25),  # yellow
+    (240, 50, 230),  # magenta
 ]
 
 
@@ -83,11 +81,11 @@ def load_coco_annotations(ann_file: str) -> dict:
 
 def find_interesting_images(
     img_info: dict,
-    target_classes: List[str],
+    target_classes: list[str],
     min_categories: int = 3,
     min_objects: int = 5,
     landscape_only: bool = True,
-) -> List[dict]:
+) -> list[dict]:
     """Filter images that contain multiple target classes."""
     candidates = []
     target_set = set(target_classes)
@@ -98,22 +96,24 @@ def find_interesting_images(
             continue
         if landscape_only and info["height"] >= info["width"]:
             continue
-        candidates.append({
-            "img_id": img_id,
-            "file_name": info["file_name"],
-            "width": info["width"],
-            "height": info["height"],
-            "n_target_classes": len(overlap),
-            "target_classes": sorted(overlap),
-            "n_objects": info["n_objects"],
-        })
+        candidates.append(
+            {
+                "img_id": img_id,
+                "file_name": info["file_name"],
+                "width": info["width"],
+                "height": info["height"],
+                "n_target_classes": len(overlap),
+                "target_classes": sorted(overlap),
+                "n_objects": info["n_objects"],
+            }
+        )
 
     # Sort by diversity then object count (most diverse first)
     candidates.sort(key=lambda x: (-x["n_target_classes"], -x["n_objects"]))
     return candidates
 
 
-def cross_class_nms(results: Dict, iou_threshold: float = 0.5) -> Dict:
+def cross_class_nms(results: dict, iou_threshold: float = 0.5) -> dict:
     """Apply NMS across all classes to remove duplicate detections of the same object."""
     if len(results["scores"]) == 0:
         return results
@@ -122,6 +122,7 @@ def cross_class_nms(results: Dict, iou_threshold: float = 0.5) -> Dict:
     scores = results["scores"]  # (N,) tensor
 
     from torchvision.ops import nms
+
     keep = nms(boxes, scores, iou_threshold)
     keep = keep.sort().values  # preserve original order
 
@@ -136,27 +137,27 @@ def cross_class_nms(results: Dict, iou_threshold: float = 0.5) -> Dict:
 
 def annotate_detections(
     image: Image.Image,
-    results: Dict,
-    class_names: List[str],
+    results: dict,
+    class_names: list[str],
     box_width: int = 4,
     font_size: int = 0,
     min_score: float = 0.3,
 ) -> Image.Image:
     """Draw bounding boxes and labels on image. No masks — detection only."""
     img = image.convert("RGB").copy()
-    w, h = img.size
+    _w, h = img.size
 
     if font_size <= 0:
         font_size = max(16, int(h / 40))
 
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
-    except (OSError, IOError):
+    except OSError:
         try:
             font = ImageFont.truetype(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size
             )
-        except (OSError, IOError):
+        except OSError:
             font = ImageFont.load_default()
 
     # Map class → stable color
@@ -189,7 +190,9 @@ def annotate_detections(
     return img
 
 
-def create_grid(images: List[Image.Image], n_cols: int = 3, pad: int = 8) -> Image.Image:
+def create_grid(
+    images: list[Image.Image], n_cols: int = 3, pad: int = 8
+) -> Image.Image:
     """Combine images into a grid with uniform sizing and white padding."""
     n = len(images)
     n_rows = (n + n_cols - 1) // n_cols
@@ -225,29 +228,56 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate qualitative detection figures for the paper"
     )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for image selection")
-    parser.add_argument("--n-images", type=int, default=3, help="Number of images to generate")
-    parser.add_argument("--classes", nargs="+", default=DEFAULT_CLASSES, help="Target classes")
-    parser.add_argument("--images-dir", default=IMAGES_DIR, help="COCO val2017 images dir")
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for image selection"
+    )
+    parser.add_argument(
+        "--n-images", type=int, default=3, help="Number of images to generate"
+    )
+    parser.add_argument(
+        "--classes", nargs="+", default=DEFAULT_CLASSES, help="Target classes"
+    )
+    parser.add_argument(
+        "--images-dir", default=IMAGES_DIR, help="COCO val2017 images dir"
+    )
     parser.add_argument("--ann-file", default=ANN_FILE, help="COCO annotations JSON")
     parser.add_argument("--checkpoint", default=CHECKPOINT, help="SAM3 checkpoint path")
     parser.add_argument("--output-dir", default=OUTPUT_DIR, help="Output directory")
-    parser.add_argument("--imgsz", type=int, default=RESOLUTION, help="Inference resolution")
-    parser.add_argument("--confidence", type=float, default=0.3, help="Confidence threshold")
+    parser.add_argument(
+        "--imgsz", type=int, default=RESOLUTION, help="Inference resolution"
+    )
+    parser.add_argument(
+        "--confidence", type=float, default=0.3, help="Confidence threshold"
+    )
     parser.add_argument("--trt", default=None, help="TRT backbone engine (optional)")
     parser.add_argument(
         "--trt-enc-dec", default=None, help="TRT enc-dec engine (optional)"
     )
     parser.add_argument("--trt-max-classes", type=int, default=16)
-    parser.add_argument("--min-categories", type=int, default=MIN_CATEGORIES,
-                        help="Min target classes per image")
-    parser.add_argument("--min-objects", type=int, default=MIN_OBJECTS,
-                        help="Min annotated objects per image")
+    parser.add_argument(
+        "--min-categories",
+        type=int,
+        default=MIN_CATEGORIES,
+        help="Min target classes per image",
+    )
+    parser.add_argument(
+        "--min-objects",
+        type=int,
+        default=MIN_OBJECTS,
+        help="Min annotated objects per image",
+    )
     parser.add_argument("--grid-cols", type=int, default=3, help="Grid columns")
-    parser.add_argument("--images", nargs="+", default=None,
-                        help="Override: specific image filenames to use (skip random selection)")
-    parser.add_argument("--list-candidates", action="store_true",
-                        help="Just list candidate images without running inference")
+    parser.add_argument(
+        "--images",
+        nargs="+",
+        default=None,
+        help="Override: specific image filenames to use (skip random selection)",
+    )
+    parser.add_argument(
+        "--list-candidates",
+        action="store_true",
+        help="Just list candidate images without running inference",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -260,11 +290,15 @@ def main():
     candidates = find_interesting_images(
         img_info, args.classes, args.min_categories, args.min_objects
     )
-    print(f"  {len(candidates)} images have >= {args.min_categories} target classes "
-          f"and >= {args.min_objects} objects")
+    print(
+        f"  {len(candidates)} images have >= {args.min_categories} target classes "
+        f"and >= {args.min_objects} objects"
+    )
 
     if not candidates:
-        print("No suitable images found. Try lowering --min-categories or --min-objects.")
+        print(
+            "No suitable images found. Try lowering --min-categories or --min-objects."
+        )
         return
 
     # ── 2. Select images ─────────────────────────────────────────────────
@@ -277,12 +311,14 @@ def main():
             if fname in all_by_name:
                 selected.append(all_by_name[fname])
             else:
-                selected.append({
-                    "file_name": fname,
-                    "n_target_classes": 0,
-                    "target_classes": [],
-                    "n_objects": 0,
-                })
+                selected.append(
+                    {
+                        "file_name": fname,
+                        "n_target_classes": 0,
+                        "target_classes": [],
+                        "n_objects": 0,
+                    }
+                )
         print(f"\nManual selection: {len(selected)} images")
     else:
         rng = random.Random(args.seed)
@@ -290,19 +326,23 @@ def main():
         print(f"\nSeed={args.seed}, selected {len(selected)} images:")
 
     for s in selected:
-        print(f"  {s['file_name']}  ({s['n_target_classes']} classes: "
-              f"{', '.join(s['target_classes'])}; {s['n_objects']} objects)")
+        print(
+            f"  {s['file_name']}  ({s['n_target_classes']} classes: "
+            f"{', '.join(s['target_classes'])}; {s['n_objects']} objects)"
+        )
 
     if args.list_candidates:
-        print(f"\nTop 20 candidates:")
+        print("\nTop 20 candidates:")
         for c in candidates[:20]:
-            print(f"  {c['file_name']}  ({c['n_target_classes']} cls: "
-                  f"{', '.join(c['target_classes'])}; {c['n_objects']} obj)")
+            print(
+                f"  {c['file_name']}  ({c['n_target_classes']} cls: "
+                f"{', '.join(c['target_classes'])}; {c['n_objects']} obj)"
+            )
         return
 
     # ── 3. Load model ─────────────────────────────────────────────────────
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"\nLoading SAM3 model on {device}...")
@@ -339,7 +379,7 @@ def main():
     annotated_images = []
     for i, sel in enumerate(selected):
         img_path = os.path.join(args.images_dir, sel["file_name"])
-        print(f"\n[{i+1}/{len(selected)}] Processing {sel['file_name']}...")
+        print(f"\n[{i + 1}/{len(selected)}] Processing {sel['file_name']}...")
 
         image = Image.open(img_path).convert("RGB")
 
@@ -363,21 +403,24 @@ def main():
         if n_before != n_dets:
             print(f"  {n_before} detections → {n_dets} after cross-class NMS")
         else:
-            print(f"  {n_dets} detections in {elapsed*1000:.1f}ms")
+            print(f"  {n_dets} detections in {elapsed * 1000:.1f}ms")
 
         # Show per-class counts
         from collections import Counter
+
         cls_counts = Counter(results["class_names"])
         for cls, cnt in cls_counts.most_common():
             print(f"    {cls}: {cnt}")
 
         annotated = annotate_detections(
-            image, results, args.classes,
+            image,
+            results,
+            args.classes,
             min_score=args.confidence,
         )
 
         # Save individual image
-        out_path = os.path.join(args.output_dir, f"qual_{i+1}.jpg")
+        out_path = os.path.join(args.output_dir, f"qual_{i + 1}.jpg")
         annotated.save(out_path, quality=95)
         print(f"  Saved {out_path}")
         annotated_images.append(annotated)
@@ -390,7 +433,7 @@ def main():
         print(f"\nCombined grid saved to {grid_path}")
         print(f"  Grid size: {grid.size[0]}x{grid.size[1]}")
 
-    print(f"\nDone! Re-run with --seed <N> to get different images.")
+    print("\nDone! Re-run with --seed <N> to get different images.")
 
 
 if __name__ == "__main__":

@@ -15,8 +15,8 @@ from torchvision.transforms import v2
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+from sam3.model_builder import build_sam3_image_model
 
 
 def main():
@@ -25,11 +25,16 @@ def main():
 
     # Load model
     model = build_sam3_image_model(
-        device=device, checkpoint_path="sam3.pt", eval_mode=True,
+        device=device,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=True, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=True,
+        detection_only=True,
     )
     predictor.set_classes(["person", "car", "bicycle", "dog"])
     predictor._ensure_compiled()
@@ -38,8 +43,12 @@ def main():
     split_block = 20
 
     # Compile part1 and part2
-    part1_fn = torch.compile(backbone.forward_image_part1, mode="default", dynamic=False)
-    part2_fn = torch.compile(backbone.forward_image_part2, mode="default", dynamic=False)
+    part1_fn = torch.compile(
+        backbone.forward_image_part1, mode="default", dynamic=False
+    )
+    part2_fn = torch.compile(
+        backbone.forward_image_part2, mode="default", dynamic=False
+    )
 
     # Prepare input
     image = Image.open("x.jpg").convert("RGB")
@@ -67,10 +76,9 @@ def main():
     print("  Warmup done")
 
     # Get a cached intermediate for part2
-    with torch.inference_mode():
-        with torch.autocast("cuda", dtype=torch.float16):
-            inter_base = part1_fn(img_tensor, split_block)
-            inter_cached = {"x": inter_base["x"].clone(), "s": inter_base["s"]}
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+        inter_base = part1_fn(img_tensor, split_block)
+        inter_cached = {"x": inter_base["x"].clone(), "s": inter_base["s"]}
     torch.cuda.synchronize()
 
     # ---------------------------------------------------------------
@@ -147,9 +155,7 @@ def main():
             t0 = time.perf_counter()
 
             # Launch part1 on backbone_stream
-            backbone_stream.wait_event(
-                torch.cuda.current_stream(device).record_event()
-            )
+            backbone_stream.wait_event(torch.cuda.current_stream(device).record_event())
             with torch.cuda.stream(backbone_stream):
                 with torch.autocast("cuda", dtype=torch.float16):
                     _inter_next = part1_fn(img_tensor, split_block)
@@ -196,9 +202,7 @@ def main():
             e_start.record()
 
             # Launch part1 on backbone_stream
-            backbone_stream.wait_event(
-                torch.cuda.current_stream(device).record_event()
-            )
+            backbone_stream.wait_event(torch.cuda.current_stream(device).record_event())
             with torch.cuda.stream(backbone_stream):
                 with torch.autocast("cuda", dtype=torch.float16):
                     _inter_next = part1_fn(img_tensor, split_block)
@@ -225,7 +229,7 @@ def main():
             torch.cuda.synchronize()
 
             p1_ms = e_start.elapsed_time(e_p1_done)
-            p2_ms = e_start.elapsed_time(e_p2_done)
+            e_start.elapsed_time(e_p2_done)
             enc_ms = e_start.elapsed_time(e_enc_done)
             all_ms = e_start.elapsed_time(e_all_done)
 
@@ -233,15 +237,17 @@ def main():
             p2_enc_times.append(enc_ms)
             total_times.append(all_ms)
 
-    print(f"  Part1 (backbone_stream): {sum(p1_times)/len(p1_times):.1f}ms")
-    print(f"  Part2+enc-dec (default): {sum(p2_enc_times)/len(p2_enc_times):.1f}ms")
-    print(f"  Total (max of both):     {sum(total_times)/len(total_times):.1f}ms")
+    print(f"  Part1 (backbone_stream): {sum(p1_times) / len(p1_times):.1f}ms")
+    print(f"  Part2+enc-dec (default): {sum(p2_enc_times) / len(p2_enc_times):.1f}ms")
+    print(f"  Total (max of both):     {sum(total_times) / len(total_times):.1f}ms")
     expected = max(
         sum(p1_times) / len(p1_times),
         sum(p2_enc_times) / len(p2_enc_times),
     )
     print(f"  Expected if overlapping: {expected:.1f}ms")
-    print(f"  Overlap efficiency:      {expected / (sum(total_times)/len(total_times)) * 100:.0f}%")
+    print(
+        f"  Overlap efficiency:      {expected / (sum(total_times) / len(total_times)) * 100:.0f}%"
+    )
 
 
 if __name__ == "__main__":

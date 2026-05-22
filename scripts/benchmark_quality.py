@@ -34,20 +34,18 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import torch
 from PIL import Image
 
-from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_multiclass import Sam3MultiClassPredictor
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-
+from sam3.model_builder import build_sam3_image_model
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 
 
-def find_images(images_dir: str, max_images: int) -> List[str]:
+def find_images(images_dir: str, max_images: int) -> list[str]:
     """Find image files in a directory, sorted alphabetically, up to max_images."""
     paths = []
     for fname in sorted(os.listdir(images_dir)):
@@ -84,10 +82,10 @@ def mask_iou_matrix(masks_a: torch.Tensor, masks_b: torch.Tensor) -> torch.Tenso
 
 
 def match_detections(
-    gt_results: Dict,
-    pred_results: Dict,
+    gt_results: dict,
+    pred_results: dict,
     iou_threshold: float = 0.5,
-) -> Dict:
+) -> dict:
     """Match predicted detections to ground truth via greedy mask IoU.
 
     Returns:
@@ -106,11 +104,11 @@ def match_detections(
     n_pred = len(pred_masks)
 
     if n_gt == 0 and n_pred == 0:
-        return dict(tp=0, fp=0, fn=0, class_correct=0, class_total=0)
+        return {"tp": 0, "fp": 0, "fn": 0, "class_correct": 0, "class_total": 0}
     if n_gt == 0:
-        return dict(tp=0, fp=n_pred, fn=0, class_correct=0, class_total=0)
+        return {"tp": 0, "fp": n_pred, "fn": 0, "class_correct": 0, "class_total": 0}
     if n_pred == 0:
-        return dict(tp=0, fp=0, fn=n_gt, class_correct=0, class_total=0)
+        return {"tp": 0, "fp": 0, "fn": n_gt, "class_correct": 0, "class_total": 0}
 
     iou_mat = mask_iou_matrix(gt_masks, pred_masks)  # (n_gt, n_pred)
 
@@ -136,13 +134,13 @@ def match_detections(
             class_correct += 1
 
     tp = len(gt_matched)
-    return dict(
-        tp=tp,
-        fp=n_pred - len(pred_matched),
-        fn=n_gt - tp,
-        class_correct=class_correct,
-        class_total=tp,
-    )
+    return {
+        "tp": tp,
+        "fp": n_pred - len(pred_matched),
+        "fn": n_gt - tp,
+        "class_correct": class_correct,
+        "class_total": tp,
+    }
 
 
 def run_predictor(predictor, image, confidence_threshold, nms_threshold, device):
@@ -170,54 +168,78 @@ def main():
         description="SAM3 multi-class quality + speed benchmark"
     )
     parser.add_argument(
-        "--images-dir", type=str, required=True,
+        "--images-dir",
+        type=str,
+        required=True,
         help="Directory containing input images",
     )
     parser.add_argument(
-        "--classes", nargs="+", type=str,
+        "--classes",
+        nargs="+",
+        type=str,
         default=["car", "pedestrian", "bicycle"],
         help="Target class names",
     )
     parser.add_argument(
-        "--max-images", type=int, default=1000,
+        "--max-images",
+        type=int,
+        default=1000,
         help="Maximum number of images to process (default: 1000)",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=1008,
+        "--imgsz",
+        type=int,
+        default=1008,
         help="Model input resolution (default: 1008)",
     )
     parser.add_argument(
-        "--confidence", type=float, default=0.3,
+        "--confidence",
+        type=float,
+        default=0.3,
         help="Confidence threshold for all methods",
     )
     parser.add_argument(
-        "--nms", type=float, default=0.7,
+        "--nms",
+        type=float,
+        default=0.7,
         help="Cross-class NMS IoU threshold",
     )
     parser.add_argument(
-        "--match-iou", type=float, default=0.5,
+        "--match-iou",
+        type=float,
+        default=0.5,
         help="IoU threshold for matching predictions to ground truth",
     )
     parser.add_argument(
-        "--device", type=str,
+        "--device",
+        type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device",
     )
     parser.add_argument(
-        "--checkpoint", type=str, default=None,
+        "--checkpoint",
+        type=str,
+        default=None,
         help="Path to model checkpoint",
     )
     parser.add_argument(
-        "--compile", type=str, default=None,
+        "--compile",
+        type=str,
+        default=None,
         choices=["default", "reduce-overhead", "max-autotune"],
         help="torch.compile mode for fast predictors",
     )
     parser.add_argument(
-        "--generic-prompt", type=str, default="object",
+        "--generic-prompt",
+        type=str,
+        default="object",
         help="Scene-level prompt for shared-encoder mode",
     )
     parser.add_argument(
-        "--methods", nargs="+", type=str, default=None,
+        "--methods",
+        nargs="+",
+        type=str,
+        default=None,
         choices=["sequential", "batched", "shared-encoder", "single-pass"],
         help="Subset of methods to benchmark (default: all)",
     )
@@ -233,9 +255,16 @@ def main():
 
     n_images = len(image_paths)
     n_classes = len(args.classes)
-    enabled = set(args.methods) if args.methods else {
-        "sequential", "batched", "shared-encoder", "single-pass",
-    }
+    enabled = (
+        set(args.methods)
+        if args.methods
+        else {
+            "sequential",
+            "batched",
+            "shared-encoder",
+            "single-pass",
+        }
+    )
 
     print(f"Images:      {n_images} (from {args.images_dir})")
     print(f"Classes:     {args.classes}")
@@ -257,19 +286,24 @@ def main():
     )
 
     # Ordered dict of (label, predictor)
-    predictors: Dict[str, object] = {}
+    predictors: dict[str, object] = {}
 
     # Ground truth is always the sequential predictor
     gt_predictor = Sam3MultiClassPredictor(
-        model, device=args.device, resolution=args.imgsz,
+        model,
+        device=args.device,
+        resolution=args.imgsz,
     )
     gt_predictor.set_classes(args.classes)
     predictors["Sequential (GT)"] = gt_predictor
 
     if "batched" in enabled:
         p = Sam3MultiClassPredictorFast(
-            model, device=args.device, resolution=args.imgsz,
-            compile_mode=args.compile, use_fp16=True,
+            model,
+            device=args.device,
+            resolution=args.imgsz,
+            compile_mode=args.compile,
+            use_fp16=True,
             presence_threshold=0.05,
         )
         p.set_classes(args.classes)
@@ -277,18 +311,25 @@ def main():
 
     if "shared-encoder" in enabled:
         p = Sam3MultiClassPredictorFast(
-            model, device=args.device, resolution=args.imgsz,
-            compile_mode=args.compile, use_fp16=True,
+            model,
+            device=args.device,
+            resolution=args.imgsz,
+            compile_mode=args.compile,
+            use_fp16=True,
             presence_threshold=0.05,
-            shared_encoder=True, generic_prompt=args.generic_prompt,
+            shared_encoder=True,
+            generic_prompt=args.generic_prompt,
         )
         p.set_classes(args.classes)
         predictors["Shared-encoder"] = p
 
     if "single-pass" in enabled:
         p = Sam3MultiClassPredictorFast(
-            model, device=args.device, resolution=args.imgsz,
-            compile_mode=args.compile, use_fp16=True,
+            model,
+            device=args.device,
+            resolution=args.imgsz,
+            compile_mode=args.compile,
+            use_fp16=True,
             single_pass=True,
         )
         p.set_classes(args.classes)
@@ -308,7 +349,7 @@ def main():
     # ------------------------------------------------------------------
     # Per-method accumulators
     acc = {
-        name: dict(tp=0, fp=0, fn=0, cls_ok=0, cls_tot=0, times=[], n_dets=0)
+        name: {"tp": 0, "fp": 0, "fn": 0, "cls_ok": 0, "cls_tot": 0, "times": [], "n_dets": 0}
         for name in predictors
     }
 
@@ -317,14 +358,20 @@ def main():
         image = Image.open(img_path).convert("RGB")
 
         if (img_idx + 1) % max(n_images // 20, 1) == 0 or img_idx == 0:
-            print(f"  [{img_idx + 1:>{len(str(n_images))}}/{n_images}] "
-                  f"{os.path.basename(img_path)}")
+            print(
+                f"  [{img_idx + 1:>{len(str(n_images))}}/{n_images}] "
+                f"{os.path.basename(img_path)}"
+            )
 
         gt_results = None
 
         for name, pred in predictors.items():
             results, elapsed_ms = run_predictor(
-                pred, image, args.confidence, args.nms, args.device,
+                pred,
+                image,
+                args.confidence,
+                args.nms,
+                args.device,
             )
             a = acc[name]
             a["times"].append(elapsed_ms)
@@ -339,7 +386,9 @@ def main():
                 a["cls_tot"] += n_det
             else:
                 m = match_detections(
-                    gt_results, results, iou_threshold=args.match_iou,
+                    gt_results,
+                    results,
+                    iou_threshold=args.match_iou,
                 )
                 a["tp"] += m["tp"]
                 a["fp"] += m["fp"]
@@ -352,11 +401,15 @@ def main():
     # ------------------------------------------------------------------
     W = 85
     print(f"\n{'=' * W}")
-    print(f"QUALITY BENCHMARK  "
-          f"({n_images} images, {n_classes} classes, imgsz={args.imgsz})")
+    print(
+        f"QUALITY BENCHMARK  "
+        f"({n_images} images, {n_classes} classes, imgsz={args.imgsz})"
+    )
     print(f"{'=' * W}")
-    header = (f"  {'Method':<28s}  {'Prec':>6s}  {'Rec':>6s}  {'F1':>6s}"
-              f"  {'ClsAcc':>6s}  {'ms/img':>8s}  {'Dets':>6s}")
+    header = (
+        f"  {'Method':<28s}  {'Prec':>6s}  {'Rec':>6s}  {'F1':>6s}"
+        f"  {'ClsAcc':>6s}  {'ms/img':>8s}  {'Dets':>6s}"
+    )
     print(header)
     print(f"  {'-' * (W - 2)}")
 
@@ -379,13 +432,17 @@ def main():
             speedup = gt_avg_ms / avg_ms
             tag = f"  ({speedup:.1f}x)"
 
-        print(f"  {name:<28s}  {prec:6.3f}  {rec:6.3f}  {f1:6.3f}"
-              f"  {cls_acc:6.3f}  {avg_ms:8.1f}  {a['n_dets']:>6d}{tag}")
+        print(
+            f"  {name:<28s}  {prec:6.3f}  {rec:6.3f}  {f1:6.3f}"
+            f"  {cls_acc:6.3f}  {avg_ms:8.1f}  {a['n_dets']:>6d}{tag}"
+        )
 
     print(f"{'=' * W}")
-    print(f"  Cross-class NMS IoU={args.nms}, "
-          f"match IoU={args.match_iou}, "
-          f"conf={args.confidence}")
+    print(
+        f"  Cross-class NMS IoU={args.nms}, "
+        f"match IoU={args.match_iou}, "
+        f"conf={args.confidence}"
+    )
     print(f"  GT total detections: {acc['Sequential (GT)']['tp']}")
     print()
 

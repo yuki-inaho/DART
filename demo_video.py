@@ -40,16 +40,16 @@ import time
 import cv2
 import numpy as np
 import torch
+from demo_multiclass import CLASS_COLOURS
 from PIL import Image
 
+from sam3.efficient_backbone import build_efficientsam3_model
+from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
 from sam3.model_builder import (
     build_pruned_sam3_image_model,
     build_sam3_image_model,
     load_pruned_config,
 )
-from sam3.efficient_backbone import build_efficientsam3_model
-from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
-from demo_multiclass import CLASS_COLOURS
 
 
 def draw_detections_cv2(frame_bgr, results, class_names, tracks=None):
@@ -80,16 +80,22 @@ def draw_detections_cv2(frame_bgr, results, class_names, tracks=None):
             cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), colour_bgr, 2)
 
             label = f"#{track.track_id} {cls_name} {track.score:.2f}"
-            (tw, th), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(
-                frame_bgr, (x1, max(y1 - th - 6, 0)),
-                (x1 + tw + 4, max(y1, th + 6)), colour_bgr, -1,
+                frame_bgr,
+                (x1, max(y1 - th - 6, 0)),
+                (x1 + tw + 4, max(y1, th + 6)),
+                colour_bgr,
+                -1,
             )
             cv2.putText(
-                frame_bgr, label, (x1 + 2, max(y1 - 4, th + 2)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
+                frame_bgr,
+                label,
+                (x1 + 2, max(y1 - 4, th + 2)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
             )
     else:
         # Draw raw detections (no tracking)
@@ -104,150 +110,208 @@ def draw_detections_cv2(frame_bgr, results, class_names, tracks=None):
             cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), colour_bgr, 2)
 
             label = f"{cls_name} {score:.2f}"
-            (tw, th), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(
-                frame_bgr, (x1, max(y1 - th - 6, 0)),
-                (x1 + tw + 4, max(y1, th + 6)), colour_bgr, -1,
+                frame_bgr,
+                (x1, max(y1 - th - 6, 0)),
+                (x1 + tw + 4, max(y1, th + 6)),
+                colour_bgr,
+                -1,
             )
             cv2.putText(
-                frame_bgr, label, (x1 + 2, max(y1 - 4, th + 2)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
+                frame_bgr,
+                label,
+                (x1 + 2, max(y1 - 4, th + 2)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
             )
 
     return frame_bgr
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="SAM3 pipelined video processing"
-    )
+    parser = argparse.ArgumentParser(description="SAM3 pipelined video processing")
+    parser.add_argument("--video", required=True, help="Input video file path")
     parser.add_argument(
-        "--video", required=True, help="Input video file path"
-    )
-    parser.add_argument(
-        "--classes", nargs="+", type=str,
+        "--classes",
+        nargs="+",
+        type=str,
         default=["car", "pedestrian", "bicycle"],
         help="Target class names",
     )
     parser.add_argument(
-        "--coco", action="store_true",
+        "--coco",
+        action="store_true",
         help="Use all 80 COCO classes (overrides --classes)",
     )
     parser.add_argument(
-        "--checkpoint", type=str, default=None,
+        "--checkpoint",
+        type=str,
+        default=None,
         help="Model checkpoint path (default: download from HF)",
     )
     parser.add_argument(
-        "--efficient-backbone", type=str, default=None,
+        "--efficient-backbone",
+        type=str,
+        default=None,
         choices=["efficientvit", "repvit", "tinyvit"],
         help="Use lightweight EfficientSAM3 backbone instead of ViT-H",
     )
     parser.add_argument(
-        "--efficient-model", type=str, default=None,
+        "--efficient-model",
+        type=str,
+        default=None,
         help="Backbone variant (e.g. b0/b1/b2, m0_9/m1_1/m2_3, 5m/11m/21m)",
     )
     # Backbone mode: TRT or torch.compile (at least one required)
     parser.add_argument(
-        "--trt", type=str, default=None, metavar="ENGINE",
+        "--trt",
+        type=str,
+        default=None,
+        metavar="ENGINE",
         help="TRT backbone engine (enables TRT pipelining)",
     )
     parser.add_argument(
-        "--compile", type=str, default=None, metavar="MODE",
+        "--compile",
+        type=str,
+        default=None,
+        metavar="MODE",
         choices=["default", "reduce-overhead", "max-autotune"],
         help="torch.compile mode for backbone (e.g. max-autotune)",
     )
     parser.add_argument(
-        "--trt-enc-dec", type=str, default=None, metavar="ENGINE",
+        "--trt-enc-dec",
+        type=str,
+        default=None,
+        metavar="ENGINE",
         help="TRT encoder-decoder engine (optional)",
     )
     parser.add_argument(
-        "--trt-max-classes", type=int, default=4,
+        "--trt-max-classes",
+        type=int,
+        default=4,
         help="Max classes for enc-dec TRT engine",
     )
     parser.add_argument(
-        "--confidence", type=float, default=0.3,
+        "--confidence",
+        type=float,
+        default=0.3,
         help="Detection confidence threshold",
     )
     parser.add_argument(
-        "--nms", type=float, default=0.7,
+        "--nms",
+        type=float,
+        default=0.7,
         help="NMS IoU threshold",
     )
     parser.add_argument(
-        "--output", "-o", type=str, default=None,
+        "--output",
+        "-o",
+        type=str,
+        default=None,
         help="Output video file path (optional)",
     )
     parser.add_argument(
-        "--display", action="store_true",
+        "--display",
+        action="store_true",
         help="Show live preview with cv2.imshow",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=1008,
+        "--imgsz",
+        type=int,
+        default=1008,
         help="Input resolution (default 1008, must be divisible by 14)",
     )
     parser.add_argument(
-        "--max-frames", type=int, default=0,
+        "--max-frames",
+        type=int,
+        default=0,
         help="Stop after N frames (0 = all)",
     )
     parser.add_argument(
-        "--split-backbone", action="store_true",
+        "--split-backbone",
+        action="store_true",
         help="Split ViT backbone for better pipeline balance. "
-             "Requires --compile (not --trt). Up to 67%% throughput improvement.",
+        "Requires --compile (not --trt). Up to 67%% throughput improvement.",
     )
     parser.add_argument(
-        "--split-block", type=int, default=20,
+        "--split-block",
+        type=int,
+        default=20,
         help="Block index to split ViT at (default 20, optimal for TRT enc-dec). "
-             "Use 24 if not using TRT enc-dec.",
+        "Use 24 if not using TRT enc-dec.",
     )
     parser.add_argument(
-        "--cuda-graphs", action="store_true",
+        "--cuda-graphs",
+        action="store_true",
         help="Use manual CUDA graph capture with split backbone. "
-             "Equivalent to max-autotune performance without cross-function conflicts.",
+        "Equivalent to max-autotune performance without cross-function conflicts.",
     )
     parser.add_argument(
-        "--text-cache", type=str, default=None, metavar="PATH",
+        "--text-cache",
+        type=str,
+        default=None,
+        metavar="PATH",
         help="Path to cached text embeddings (.pt).",
     )
     # Tracking
     parser.add_argument(
-        "--track", action="store_true",
+        "--track",
+        action="store_true",
         help="Enable ByteTrack multi-object tracking",
     )
     parser.add_argument(
-        "--track-thresh", type=float, default=0.5,
+        "--track-thresh",
+        type=float,
+        default=0.5,
         help="ByteTrack: high/low score threshold (default 0.5)",
     )
     parser.add_argument(
-        "--match-thresh", type=float, default=0.5,
+        "--match-thresh",
+        type=float,
+        default=0.5,
         help="ByteTrack: IoU matching threshold (default 0.5)",
     )
     parser.add_argument(
-        "--max-time-lost", type=int, default=30,
+        "--max-time-lost",
+        type=int,
+        default=30,
         help="ByteTrack: frames before removing lost track (default 30)",
     )
     parser.add_argument(
-        "--class-agnostic-nms", type=float, default=None, metavar="THRESH",
+        "--class-agnostic-nms",
+        type=float,
+        default=None,
+        metavar="THRESH",
         help="Class-agnostic NMS threshold applied before tracking. Suppresses "
-             "overlapping detections of different classes (e.g. car/suv on same "
-             "object). Disabled by default; pass a threshold (e.g. 0.7) to enable.",
+        "overlapping detections of different classes (e.g. car/suv on same "
+        "object). Disabled by default; pass a threshold (e.g. 0.7) to enable.",
     )
     parser.add_argument(
-        "--skip-blocks", type=str, default=None, metavar="INDICES",
+        "--skip-blocks",
+        type=str,
+        default=None,
+        metavar="INDICES",
         help="Comma-separated ViT block indices to skip for block pruning "
-             "(e.g. '1,3,9,11,17,19,25,27' skips 8 window blocks). "
-             "Cannot skip global attention blocks [7,15,23,31]."
+        "(e.g. '1,3,9,11,17,19,25,27' skips 8 window blocks). "
+        "Cannot skip global attention blocks [7,15,23,31].",
     )
     parser.add_argument(
-        "--mask-blocks", type=str, default=None, metavar="SPEC",
+        "--mask-blocks",
+        type=str,
+        default=None,
+        metavar="SPEC",
         help="Fine-grained sub-block pruning from BlockPruner search. "
-             "Comma-separated 'idx:type' pairs (e.g. '0:attn,1:mlp,2:attn'). "
-             "Run scripts/block_pruner_search.py to find optimal pruning order."
+        "Comma-separated 'idx:type' pairs (e.g. '0:attn,1:mlp,2:attn'). "
+        "Run scripts/block_pruner_search.py to find optimal pruning order.",
     )
     args = parser.parse_args()
 
     if args.coco:
         from sam3.coco_classes import COCO_CLASSES
+
         args.classes = COCO_CLASSES
 
     if args.imgsz % 14 != 0:
@@ -271,14 +335,16 @@ def main():
         sys.exit(1)
 
     if args.efficient_backbone and args.split_backbone:
-        print("ERROR: --split-backbone is not compatible with --efficient-backbone "
-              "(student backbone has no ViT blocks to split)")
+        print(
+            "ERROR: --split-backbone is not compatible with --efficient-backbone "
+            "(student backbone has no ViT blocks to split)"
+        )
         sys.exit(1)
 
     # Parse skip_blocks
     skip_blocks = None
     if args.skip_blocks:
-        skip_blocks = set(int(x.strip()) for x in args.skip_blocks.split(","))
+        skip_blocks = {int(x.strip()) for x in args.skip_blocks.split(",")}
         if args.efficient_backbone:
             print("ERROR: --skip-blocks is not compatible with --efficient-backbone")
             sys.exit(1)
@@ -312,7 +378,9 @@ def main():
     elif args.split_backbone:
         backbone_mode = "split"
         cg_str = " + CUDA graphs" if args.cuda_graphs else ""
-        print(f"Backbone: split @ block {args.split_block} + torch.compile({args.compile}){cg_str}")
+        print(
+            f"Backbone: split @ block {args.split_block} + torch.compile({args.compile}){cg_str}"
+        )
     else:
         backbone_mode = "compile"
         print(f"Backbone: torch.compile({args.compile})")
@@ -320,23 +388,23 @@ def main():
     if args.trt_enc_dec:
         print(f"Enc-dec:  TRT ({args.trt_enc_dec})")
     else:
-        print(f"Enc-dec:  PyTorch")
+        print("Enc-dec:  PyTorch")
 
     # --- Load model ---
     text_cache_exists = args.text_cache and os.path.exists(args.text_cache)
     use_trt_only = (
-        text_cache_exists
-        and args.trt
-        and args.trt_enc_dec
-        and args.checkpoint is None
+        text_cache_exists and args.trt and args.trt_enc_dec and args.checkpoint is None
     )
 
     if use_trt_only:
         from sam3.model.sam3_multiclass_fast import _TRTModelStub
+
         print("Using TRT-only mode (no checkpoint — text from cache)")
         model = _TRTModelStub(device=device)
     elif args.efficient_backbone:
-        print(f"Loading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model})...")
+        print(
+            f"Loading EfficientSAM3 ({args.efficient_backbone} {args.efficient_model})..."
+        )
         model = build_efficientsam3_model(
             backbone_type=args.efficient_backbone,
             model_name=args.efficient_model,
@@ -352,9 +420,7 @@ def main():
         if mask_blocks:
             skip_msg += f", mask_blocks={mask_blocks}"
         print(f"Loading SAM3 model...{skip_msg}")
-        pruned_config = (
-            load_pruned_config(args.checkpoint) if args.checkpoint else None
-        )
+        pruned_config = load_pruned_config(args.checkpoint) if args.checkpoint else None
         if pruned_config is not None:
             print(f"  Detected pruned checkpoint: {pruned_config}")
             model = build_pruned_sam3_image_model(
@@ -400,6 +466,7 @@ def main():
     # --- Create pipeline ---
     if backbone_mode == "trt":
         from sam3.video_pipeline import PipelinedVideoProcessor
+
         pipeline = PipelinedVideoProcessor(
             predictor=predictor,
             backbone_engine_path=args.trt,
@@ -422,8 +489,8 @@ def main():
         # Warmup: run split pipeline on dummy input
         dummy_img = Image.new("RGB", (args.imgsz, args.imgsz))
         with torch.inference_mode():
-            bb = predictor.model.backbone
             from torchvision.transforms import v2
+
             dummy_tensor = v2.functional.to_image(dummy_img).to(device)
             dummy_tensor = predictor.transform(dummy_tensor).unsqueeze(0)
             with torch.autocast("cuda", dtype=torch.float16):
@@ -471,6 +538,7 @@ def main():
     tracker = None
     if args.track:
         from sam3.tracking import BYTETracker
+
         ca_nms = args.class_agnostic_nms if args.class_agnostic_nms is not None else 1.0
         tracker = BYTETracker(
             track_thresh=args.track_thresh,
@@ -479,9 +547,11 @@ def main():
             class_agnostic_nms_thresh=ca_nms,
         )
         ca_label = f", class-agnostic-nms={ca_nms}" if ca_nms < 1.0 else ""
-        print(f"Tracking: ByteTrack (thresh={args.track_thresh}, "
-              f"match={args.match_thresh}, max_lost={args.max_time_lost}"
-              f"{ca_label})")
+        print(
+            f"Tracking: ByteTrack (thresh={args.track_thresh}, "
+            f"match={args.match_thresh}, max_lost={args.max_time_lost}"
+            f"{ca_label})"
+        )
 
     # --- Video writer ---
     writer = None
@@ -527,15 +597,17 @@ def main():
         if frame_idx % 30 == 0:
             n_tracks = len(tracks) if tracks else 0
             if tracker:
-                print(f"  Frame {frame_idx}: {n_dets} dets, "
-                      f"{n_tracks} tracks")
+                print(f"  Frame {frame_idx}: {n_dets} dets, {n_tracks} tracks")
             else:
                 print(f"  Frame {frame_idx}: {n_dets} detections")
 
         # Annotate and write/display
         if writer is not None or args.display:
             annotated = draw_detections_cv2(
-                frame_bgr.copy(), results, args.classes, tracks=tracks,
+                frame_bgr.copy(),
+                results,
+                args.classes,
+                tracks=tracks,
             )
             if writer is not None:
                 writer.write(annotated)
@@ -545,7 +617,7 @@ def main():
                     raise KeyboardInterrupt
 
     # --- Run pipeline ---
-    print(f"\nProcessing video...")
+    print("\nProcessing video...")
     t_total = time.perf_counter()
     try:
         stats = pipeline.process_video(
@@ -562,8 +634,7 @@ def main():
             "elapsed_s": time.perf_counter() - t_total,
         }
         stats["fps"] = (
-            stats["total_frames"] / stats["elapsed_s"]
-            if stats["elapsed_s"] > 0 else 0
+            stats["total_frames"] / stats["elapsed_s"] if stats["elapsed_s"] > 0 else 0
         )
 
     if writer is not None:
@@ -572,9 +643,9 @@ def main():
         cv2.destroyAllWindows()
 
     # --- Print stats ---
-    print(f"\n{'='*55}")
-    print(f"RESULTS")
-    print(f"{'='*55}")
+    print(f"\n{'=' * 55}")
+    print("RESULTS")
+    print(f"{'=' * 55}")
     if args.efficient_backbone:
         bb_label = f"{args.efficient_backbone}/{args.efficient_model}"
         if args.compile:
@@ -585,7 +656,7 @@ def main():
         bb_label = f"split @ block {args.split_block} + torch.compile({args.compile})"
     else:
         bb_label = f"torch.compile({args.compile})"
-    ed_label = f"TRT" if args.trt_enc_dec else "PyTorch"
+    ed_label = "TRT" if args.trt_enc_dec else "PyTorch"
     print(f"  Backbone:            {bb_label}")
     print(f"  Enc-dec:             {ed_label}")
     print(f"  Frames processed:    {stats['total_frames']}")
@@ -600,7 +671,7 @@ def main():
         print(f"  Unique tracks:       {track_count[0]}")
     if args.output:
         print(f"  Output saved:        {args.output}")
-    print(f"{'='*55}")
+    print(f"{'=' * 55}")
 
 
 if __name__ == "__main__":

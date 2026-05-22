@@ -14,7 +14,6 @@ import os
 import random
 from pathlib import Path
 
-import numpy as np
 import torch
 from torchvision.transforms import v2
 
@@ -82,17 +81,23 @@ class CocoCalibrator(_CalibratorBase):
         self.current_batch = 0
 
         # Same transform as Sam3MultiClassPredictorFast
-        self.transform = v2.Compose([
-            v2.ToDtype(torch.uint8, scale=True),
-            v2.Resize(size=(resolution, resolution)),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ])
+        self.transform = v2.Compose(
+            [
+                v2.ToDtype(torch.uint8, scale=True),
+                v2.Resize(size=(resolution, resolution)),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
 
         # Pre-allocate device buffer for one batch
         self.device_input = torch.empty(
-            batch_size, 3, resolution, resolution,
-            dtype=torch.float32, device="cuda",
+            batch_size,
+            3,
+            resolution,
+            resolution,
+            dtype=torch.float32,
+            device="cuda",
         )
 
         print(
@@ -135,9 +140,7 @@ class CocoCalibrator(_CalibratorBase):
 
         self.current_batch += 1
         if self.current_batch % 50 == 0 or self.current_batch == self.num_batches:
-            print(
-                f"  Calibration batch {self.current_batch}/{self.num_batches}"
-            )
+            print(f"  Calibration batch {self.current_batch}/{self.num_batches}")
 
         return [self.device_input.data_ptr()]
 

@@ -9,8 +9,6 @@ Adapted from:
 3. https://github.com/lucidrains/rotary-embedding-torch
 """
 
-from typing import Optional
-
 import torch
 from einops import rearrange, repeat
 from torch import broadcast_tensors, nn
@@ -134,7 +132,7 @@ class VisionRotaryEmbeddingVE(nn.Module):
         self,
         dim: int,
         seq_len: int,
-        pt_seq_len: Optional[int] = None,
+        pt_seq_len: int | None = None,
         theta: float = 10000.0,
         offset: int = 1,  # specific to VE
     ):

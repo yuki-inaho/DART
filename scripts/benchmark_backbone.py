@@ -21,8 +21,8 @@ Usage:
 import argparse
 import time
 
-import torch
 import numpy as np
+import torch
 
 
 def benchmark(fn, warmup=5, runs=20, label=""):
@@ -46,28 +46,34 @@ def benchmark(fn, warmup=5, runs=20, label=""):
     mean = sum(times) / len(times)
     best = times[0]
     worst = times[-1]
-    print(f"  {label:40s}  median={median:7.1f}ms  mean={mean:7.1f}ms  best={best:7.1f}ms  worst={worst:7.1f}ms")
+    print(
+        f"  {label:40s}  median={median:7.1f}ms  mean={mean:7.1f}ms  best={best:7.1f}ms  worst={worst:7.1f}ms"
+    )
     return median
 
 
 def _load_model(checkpoint_path):
     """Load SAM3 model, handling BPE tokenizer issues gracefully."""
     from sam3.model_builder import build_sam3_image_model
+
     try:
         model = build_sam3_image_model(checkpoint_path)
         return model.to("cuda").eval()
     except Exception as e:
         print(f"  (Full model load failed: {e})")
-        print("  Building vision backbone only (no text encoder needed for benchmarking)...")
+        print(
+            "  Building vision backbone only (no text encoder needed for benchmarking)..."
+        )
 
     # Build the full VL backbone with a minimal text encoder
-    from sam3.model_builder import _create_vision_backbone, _create_vl_backbone
     from sam3.model.text_encoder_ve import VETextEncoder
+    from sam3.model_builder import _create_vision_backbone, _create_vl_backbone
 
     vision_encoder = _create_vision_backbone()
 
     class _DummyTokenizer:
         context_length = 32
+
         def __call__(self, *args, **kwargs):
             return torch.zeros(1, 32, dtype=torch.long)
 
@@ -76,13 +82,21 @@ def _load_model(checkpoint_path):
 
     # Load matching weights from checkpoint
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    state_dict = ckpt if isinstance(ckpt, dict) and "model" not in ckpt else ckpt.get("model", ckpt)
+    state_dict = (
+        ckpt
+        if isinstance(ckpt, dict) and "model" not in ckpt
+        else ckpt.get("model", ckpt)
+    )
     bb_prefix = "backbone."
-    bb_weights = {k[len(bb_prefix):]: v for k, v in state_dict.items() if k.startswith(bb_prefix)}
+    bb_weights = {
+        k[len(bb_prefix) :]: v for k, v in state_dict.items() if k.startswith(bb_prefix)
+    }
     if bb_weights:
         missing, unexpected = vl_backbone.load_state_dict(bb_weights, strict=False)
         loaded = len(bb_weights) - len(unexpected)
-        print(f"  Loaded {loaded} backbone weights (missing={len(missing)}, unexpected={len(unexpected)})")
+        print(
+            f"  Loaded {loaded} backbone weights (missing={len(missing)}, unexpected={len(unexpected)})"
+        )
     else:
         print("  WARNING: No backbone weights found in checkpoint")
 
@@ -92,6 +106,7 @@ def _load_model(checkpoint_path):
     class _Model:
         def __init__(self, bb):
             self.backbone = bb
+
     return _Model(vl_backbone)
 
 
@@ -131,6 +146,7 @@ def bench_pytorch(checkpoint_path, warmup, runs):
 
     # torch.compile variants (Linux/Triton only)
     import platform
+
     if platform.system() == "Linux":
         for mode in ("default", "reduce-overhead", "max-autotune"):
             try:
@@ -143,8 +159,7 @@ def bench_pytorch(checkpoint_path, warmup, runs):
                     with torch.autocast("cuda", dtype=torch.float16):
                         fn(dummy)
 
-                benchmark(run_compiled, warmup, runs,
-                          f"torch.compile({mode}) + FP16")
+                benchmark(run_compiled, warmup, runs, f"torch.compile({mode}) + FP16")
             except Exception as e:
                 print(f"  torch.compile({mode}) failed: {e}")
 
@@ -161,9 +176,8 @@ def bench_pytorch(checkpoint_path, warmup, runs):
 
             # Capture graph
             g = torch.cuda.CUDAGraph()
-            with torch.inference_mode():
-                with torch.cuda.graph(g):
-                    backbone_f16_cg.forward_image(dummy_cg)
+            with torch.inference_mode(), torch.cuda.graph(g):
+                backbone_f16_cg.forward_image(dummy_cg)
 
             @torch.inference_mode()
             def run_cuda_graph():
@@ -209,6 +223,7 @@ def bench_trt_raw(engine_path, warmup, runs):
 
     # Allocate raw CUDA buffers via PyTorch (simplest way)
     import torch
+
     buffers = {}
     for i in range(num_io):
         name = engine.get_tensor_name(i)
@@ -238,9 +253,7 @@ def bench_trt_raw(engine_path, warmup, runs):
     # With input copy (simulates real usage)
     input_name = engine.get_tensor_name(0)
     inp_buf = buffers[input_name]
-    dummy_input = torch.randn(
-        inp_buf.shape, dtype=inp_buf.dtype, device=inp_buf.device
-    )
+    dummy_input = torch.randn(inp_buf.shape, dtype=inp_buf.dtype, device=inp_buf.device)
 
     def run_trt_with_copy():
         buffers[input_name].copy_(dummy_input)
@@ -260,6 +273,7 @@ def bench_trt_wrapper(checkpoint_path, engine_path, warmup, runs):
     model = _load_model(checkpoint_path)
 
     from sam3.trt.trt_backbone import TRTBackbone
+
     pos_module = model.backbone.vision_backbone.position_encoding
     trt_bb = TRTBackbone(
         engine_path=engine_path,
@@ -302,7 +316,9 @@ def bench_onnx(onnx_path, warmup, runs):
 
     # Get input info
     input_info = sess.get_inputs()[0]
-    print(f"  Input: {input_info.name}  shape={input_info.shape}  type={input_info.type}")
+    print(
+        f"  Input: {input_info.name}  shape={input_info.shape}  type={input_info.type}"
+    )
 
     dummy = np.random.randn(*input_info.shape).astype(np.float32)
 
@@ -315,11 +331,18 @@ def bench_onnx(onnx_path, warmup, runs):
 def main():
     parser = argparse.ArgumentParser(description="Benchmark SAM3 backbone")
     parser.add_argument("--checkpoint", required=True, help="SAM3 checkpoint (.pt)")
-    parser.add_argument("--trt", default=None, nargs="+", help="TRT engine file(s) for backbone (can pass multiple)")
+    parser.add_argument(
+        "--trt",
+        default=None,
+        nargs="+",
+        help="TRT engine file(s) for backbone (can pass multiple)",
+    )
     parser.add_argument("--onnx", default=None, help="ONNX model file for backbone")
     parser.add_argument("--warmup", type=int, default=5, help="Warmup iterations")
     parser.add_argument("--runs", type=int, default=20, help="Timed iterations")
-    parser.add_argument("--skip-pytorch", action="store_true", help="Skip PyTorch benchmarks")
+    parser.add_argument(
+        "--skip-pytorch", action="store_true", help="Skip PyTorch benchmarks"
+    )
     args = parser.parse_args()
 
     print(f"Benchmarking SAM3 backbone (warmup={args.warmup}, runs={args.runs})")
@@ -329,6 +352,7 @@ def main():
 
     try:
         import tensorrt as trt
+
         print(f"TensorRT: {trt.__version__}")
     except ImportError:
         print("TensorRT: not installed")
@@ -340,9 +364,9 @@ def main():
     # 2. TRT raw + wrapper (for each engine)
     if args.trt:
         for engine_path in args.trt:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  Engine: {engine_path}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             bench_trt_raw(engine_path, args.warmup, args.runs)
             bench_trt_wrapper(args.checkpoint, engine_path, args.warmup, args.runs)
 

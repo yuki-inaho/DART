@@ -15,11 +15,8 @@ After training, saves a pruned checkpoint with removed block weights stripped.
 import copy
 import os
 import time
-from typing import List, Optional, Tuple
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -27,8 +24,8 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 from sam3.distillation.distill_trainer import (
-    ImageFolderDataset,
     FeatureDistillationLoss,
+    ImageFolderDataset,
     dist_print,
     get_rank,
     get_world_size,
@@ -47,7 +44,9 @@ def _log_vram(label: str = ""):
     total = torch.cuda.get_device_properties(0).total_memory / 1024**3
     prefix = f"  [{label}] " if label else "  "
     if is_main_process():
-        print(f"{prefix}VRAM: {alloc:.1f}GB allocated, {reserved:.1f}GB reserved, {total:.0f}GB total")
+        print(
+            f"{prefix}VRAM: {alloc:.1f}GB allocated, {reserved:.1f}GB reserved, {total:.0f}GB total"
+        )
 
 
 def _freeze_masked_blocks(trunk, mask_blocks):
@@ -78,12 +77,12 @@ def _remove_masked_weights(state_dict, mask_blocks, skip_blocks=None):
         for key in state_dict:
             if not key.startswith(prefix):
                 continue
-            if sub_type == "attn" and any(
-                k in key for k in (".attn.", ".norm1.", ".ls1.")
-            ):
-                keys_to_remove.append(key)
-            elif sub_type == "mlp" and any(
-                k in key for k in (".mlp.", ".norm2.", ".ls2.")
+            if (
+                sub_type == "attn"
+                and any(k in key for k in (".attn.", ".norm1.", ".ls1."))
+            ) or (
+                sub_type == "mlp"
+                and any(k in key for k in (".mlp.", ".norm2.", ".ls2."))
             ):
                 keys_to_remove.append(key)
 
@@ -111,7 +110,7 @@ class PruneDistillTrainer:
     def __init__(
         self,
         teacher_model,
-        mask_blocks: List[Tuple[int, str]],
+        mask_blocks: list[tuple[int, str]],
         mask_blocks_str: str,
         data_dir: str,
         output_dir: str = "prune_checkpoints",
@@ -119,12 +118,12 @@ class PruneDistillTrainer:
         batch_size: int = 1,
         num_epochs: int = 5,
         resolution: int = 1008,
-        level_weights: Optional[list] = None,
+        level_weights: list | None = None,
         num_workers: int = 4,
         save_every: int = 1,
         log_every: int = 50,
         device: str = "cuda",
-        skip_blocks: Optional[List[int]] = None,
+        skip_blocks: list[int] | None = None,
     ):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -185,9 +184,7 @@ class PruneDistillTrainer:
                     p.requires_grad = False
 
         total_params = sum(p.numel() for p in self.student.parameters())
-        trainable = sum(
-            p.numel() for p in self.student.parameters() if p.requires_grad
-        )
+        trainable = sum(p.numel() for p in self.student.parameters() if p.requires_grad)
         dist_print(f"  Total student params: {total_params:,}")
         dist_print(f"  Trainable params: {trainable:,}")
         _log_vram("After model setup")
@@ -214,9 +211,7 @@ class PruneDistillTrainer:
         # Dataset
         self.dataset = ImageFolderDataset(data_dir, resolution=resolution)
         self.sampler = (
-            DistributedSampler(self.dataset, shuffle=True)
-            if self.distributed
-            else None
+            DistributedSampler(self.dataset, shuffle=True) if self.distributed else None
         )
         self.dataloader = DataLoader(
             self.dataset,
@@ -253,9 +248,7 @@ class PruneDistillTrainer:
         return [f.float() for f in sam3_out]
 
     def _get_student_features(self, images: torch.Tensor) -> list:
-        student = (
-            self.student.module if self.distributed else self.student
-        )
+        student = self.student.module if self.distributed else self.student
         sam3_out, _, _, _ = student(images)
         if self.scalp > 0:
             sam3_out = sam3_out[: -self.scalp]
@@ -301,7 +294,7 @@ class PruneDistillTrainer:
                 eff_imgs = (step + 1) * self.batch_size * self.world_size
                 imgs_per_sec = eff_imgs / elapsed
                 print(
-                    f"  [Epoch {epoch+1}][{step+1}/{len(self.dataloader)}] "
+                    f"  [Epoch {epoch + 1}][{step + 1}/{len(self.dataloader)}] "
                     f"loss={avg:.6f} (L0={per_level[0]:.4f} L1={per_level[1]:.4f} "
                     f"L2={per_level[2]:.4f}) lr={lr_val:.2e} {imgs_per_sec:.1f} img/s"
                 )
@@ -318,7 +311,7 @@ class PruneDistillTrainer:
         # Remove masked/skipped block weights from checkpoint
         removed = _remove_masked_weights(state, self.mask_blocks, self.skip_blocks)
 
-        suffix = "final" if final else f"epoch{epoch+1}"
+        suffix = "final" if final else f"epoch{epoch + 1}"
         path = os.path.join(self.output_dir, f"pruned_{suffix}.pt")
         ckpt = {
             "epoch": epoch + 1,
@@ -345,9 +338,7 @@ class PruneDistillTrainer:
 
         # Restore model weights (pruned_state_dict has masked keys removed,
         # so use strict=False to skip them)
-        self._student_unwrapped.load_state_dict(
-            ckpt["pruned_state_dict"], strict=False
-        )
+        self._student_unwrapped.load_state_dict(ckpt["pruned_state_dict"], strict=False)
         self.start_epoch = ckpt["epoch"]
         dist_print(f"  Restored model weights from epoch {self.start_epoch}")
 
@@ -356,7 +347,7 @@ class PruneDistillTrainer:
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
             self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
             self.scaler.load_state_dict(ckpt["scaler_state_dict"])
-            dist_print(f"  Restored optimizer, scheduler, and scaler state")
+            dist_print("  Restored optimizer, scheduler, and scaler state")
         else:
             # Old-style checkpoint without optimizer state — fast-forward scheduler
             steps_per_epoch = len(self.dataloader)
@@ -376,10 +367,10 @@ class PruneDistillTrainer:
             )
             return
 
-        dist_print(f"\nStarting pruning self-distillation...")
+        dist_print("\nStarting pruning self-distillation...")
         if start_epoch > 0:
             dist_print(f"Resuming from epoch {start_epoch + 1}")
-        dist_print(f"{'='*60}")
+        dist_print(f"{'=' * 60}")
 
         for epoch in range(start_epoch, self.num_epochs):
             t0 = time.perf_counter()
@@ -387,7 +378,7 @@ class PruneDistillTrainer:
             elapsed = time.perf_counter() - t0
 
             dist_print(
-                f"Epoch {epoch+1}/{self.num_epochs}: "
+                f"Epoch {epoch + 1}/{self.num_epochs}: "
                 f"avg_loss={avg_loss:.6f} time={elapsed:.1f}s"
             )
 
@@ -400,5 +391,5 @@ class PruneDistillTrainer:
         # Save final
         self.save_checkpoint(self.num_epochs - 1, avg_loss, final=True)
 
-        dist_print(f"\n{'='*60}")
+        dist_print(f"\n{'=' * 60}")
         dist_print("Pruning self-distillation complete!")

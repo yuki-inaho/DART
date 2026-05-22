@@ -6,14 +6,12 @@ backbone.onnx (with SDPA) to find which layer types cause numerical issues.
 """
 
 import argparse
-import sys
-import torch
-import numpy as np
 from pathlib import Path
-from PIL import Image
-from torchvision.transforms import v2
 
 import tensorrt as trt
+import torch
+from PIL import Image
+from torchvision.transforms import v2
 
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.trt_backbone import TRTBackbone
@@ -41,7 +39,11 @@ def build_with_precision_map(onnx_path, engine_path, fp32_type_names, fp16_type_
         config.builder_optimization_level = 3
 
     # Set precision constraint flag
-    for flag_name in ("OBEY_PRECISION_CONSTRAINTS", "PREFER_PRECISION_CONSTRAINTS", "STRICT_TYPES"):
+    for flag_name in (
+        "OBEY_PRECISION_CONSTRAINTS",
+        "PREFER_PRECISION_CONSTRAINTS",
+        "STRICT_TYPES",
+    ):
         if hasattr(trt.BuilderFlag, flag_name):
             config.set_flag(getattr(trt.BuilderFlag, flag_name))
             break
@@ -59,10 +61,26 @@ def build_with_precision_map(onnx_path, engine_path, fp32_type_names, fp16_type_
 
     # Skip types (non-compute)
     skip_types = set()
-    for name in ("SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-                 "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-                 "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-                 "NON_ZERO", "ONE_HOT", "GRID_SAMPLE"):
+    for name in (
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
+    ):
         if hasattr(trt.LayerType, name):
             skip_types.add(getattr(trt.LayerType, name))
 
@@ -136,17 +154,21 @@ def main():
     # Load model
     print("Loading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     backbone = model.backbone
 
     # Prepare input
-    transform = v2.Compose([
-        v2.ToDtype(torch.uint8, scale=True),
-        v2.Resize(size=(args.imgsz, args.imgsz)),
-        v2.ToDtype(torch.float32, scale=True),
-        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ])
+    transform = v2.Compose(
+        [
+            v2.ToDtype(torch.uint8, scale=True),
+            v2.Resize(size=(args.imgsz, args.imgsz)),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
 
     if args.image:
         img = Image.open(args.image).convert("RGB")
@@ -157,16 +179,6 @@ def main():
         tensor = torch.randn(1, 3, args.imgsz, args.imgsz, device=device)
 
     # All compute layer types we might want to set
-    all_compute_types = [
-        "MATRIX_MULTIPLY",
-        "SOFTMAX",
-        "NORMALIZATION",
-        "ELEMENTWISE",
-        "REDUCE",
-        "UNARY",
-        "CONVOLUTION",
-        "DECONVOLUTION",
-    ]
 
     engine_path = "_test_mixed.engine"
 
@@ -200,14 +212,23 @@ def main():
 
     # Test 5: Everything except Conv in FP32 (known working)
     print("\n=== Test 4: ALL except Conv in FP32 (control) ===")
-    fp32 = ["MATRIX_MULTIPLY", "SOFTMAX", "NORMALIZATION", "ELEMENTWISE", "REDUCE", "UNARY"]
+    fp32 = [
+        "MATRIX_MULTIPLY",
+        "SOFTMAX",
+        "NORMALIZATION",
+        "ELEMENTWISE",
+        "REDUCE",
+        "UNARY",
+    ]
     fp16 = ["CONVOLUTION"]
     build_with_precision_map(args.onnx, engine_path, fp32, fp16)
     cosines = test_engine(engine_path, backbone, tensor)
     print(f"    Cosines: {[f'{c:.6f}' for c in cosines]}")
 
     # Test 6: Everything except Conv+MatMul in FP32
-    print("\n=== Test 5: Softmax+Norm+Elementwise+Reduce+Unary FP32, Conv+MatMul FP16 ===")
+    print(
+        "\n=== Test 5: Softmax+Norm+Elementwise+Reduce+Unary FP32, Conv+MatMul FP16 ==="
+    )
     fp32 = ["SOFTMAX", "NORMALIZATION", "ELEMENTWISE", "REDUCE", "UNARY"]
     fp16 = ["CONVOLUTION", "MATRIX_MULTIPLY"]
     build_with_precision_map(args.onnx, engine_path, fp32, fp16)

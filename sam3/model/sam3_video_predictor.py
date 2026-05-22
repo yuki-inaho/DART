@@ -12,10 +12,10 @@ import sys
 import time
 import uuid
 from contextlib import closing
-from typing import List, Optional
 
 import psutil
 import torch
+
 from sam3.logger import get_logger
 
 logger = get_logger(__name__)
@@ -133,12 +133,12 @@ class Sam3VideoPredictor:
         self,
         session_id: str,
         frame_idx: int,
-        text: Optional[str] = None,
-        points: Optional[List[List[float]]] = None,
-        point_labels: Optional[List[int]] = None,
-        bounding_boxes: Optional[List[List[float]]] = None,
-        bounding_box_labels: Optional[List[int]] = None,
-        obj_id: Optional[int] = None,
+        text: str | None = None,
+        points: list[list[float]] | None = None,
+        point_labels: list[int] | None = None,
+        bounding_boxes: list[list[float]] | None = None,
+        bounding_box_labels: list[int] | None = None,
+        obj_id: int | None = None,
     ):
         """Add text, box and/or point prompt on a specific video frame."""
         logger.debug(

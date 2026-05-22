@@ -2,11 +2,13 @@
 """Test surgical FP16 engine: accuracy + speed."""
 
 import time
+
 import torch
-from sam3.model_builder import build_sam3_image_model
-from sam3.trt.trt_backbone import TRTBackbone
 from PIL import Image
 from torchvision.transforms import v2
+
+from sam3.model_builder import build_sam3_image_model
+from sam3.trt.trt_backbone import TRTBackbone
 
 device = "cuda"
 N_WARMUP = 10
@@ -14,18 +16,22 @@ N_ITERS = 100
 
 print("Loading model...")
 model = build_sam3_image_model(
-    device=device, checkpoint_path="sam3.pt", eval_mode=True,
+    device=device,
+    checkpoint_path="sam3.pt",
+    eval_mode=True,
 )
 backbone = model.backbone
 pos_module = backbone.vision_backbone.position_encoding
 
 # Prepare image input
-transform = v2.Compose([
-    v2.ToDtype(torch.uint8, scale=True),
-    v2.Resize(size=(1008, 1008)),
-    v2.ToDtype(torch.float32, scale=True),
-    v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-])
+transform = v2.Compose(
+    [
+        v2.ToDtype(torch.uint8, scale=True),
+        v2.Resize(size=(1008, 1008)),
+        v2.ToDtype(torch.float32, scale=True),
+        v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ]
+)
 img = Image.open("x.jpg").convert("RGB")
 img = img.resize((1008, 1008), Image.BILINEAR)
 tensor = v2.functional.to_image(img).to(device)
@@ -45,13 +51,16 @@ engines = {
 
 for label, path in engines.items():
     import os
+
     if not os.path.exists(path):
         print(f"\n--- {label} --- SKIPPED")
         continue
 
     print(f"\n--- {label} ---")
     try:
-        trt_bb = TRTBackbone(engine_path=path, device=device, pos_encoding_module=pos_module)
+        trt_bb = TRTBackbone(
+            engine_path=path, device=device, pos_encoding_module=pos_module
+        )
     except Exception as e:
         print(f"  SKIPPED: {e}")
         continue

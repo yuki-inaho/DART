@@ -38,11 +38,12 @@ from sam3.coco_classes import COCO_CLASSES
 def cache_text_embeddings(checkpoint, class_names, output_path, device="cuda"):
     """Compute and save text embeddings for the given class names."""
     import torch
+
     from sam3.model_builder import build_sam3_image_model
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Step 3: Caching text embeddings ({len(class_names)} classes)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     print(f"Loading model from {checkpoint} ...")
     model = build_sam3_image_model(
@@ -57,14 +58,19 @@ def cache_text_embeddings(checkpoint, class_names, output_path, device="cuda"):
     with torch.inference_mode():
         text_outputs = model.backbone.forward_text(class_names, device=device)
 
-    torch.save({
-        "class_names": list(class_names),
-        "text": text_outputs["language_features"],
-        "mask": text_outputs["language_mask"],
-    }, output_path)
+    torch.save(
+        {
+            "class_names": list(class_names),
+            "text": text_outputs["language_features"],
+            "mask": text_outputs["language_mask"],
+        },
+        output_path,
+    )
 
     print(f"Saved text cache: {output_path}")
-    print(f"  Classes: {', '.join(class_names[:5])}{'...' if len(class_names) > 5 else ''}")
+    print(
+        f"  Classes: {', '.join(class_names[:5])}{'...' if len(class_names) > 5 else ''}"
+    )
     print(f"  Text features shape: {text_outputs['language_features'].shape}")
 
 
@@ -88,45 +94,62 @@ Examples:
 """,
     )
     parser.add_argument(
-        "--checkpoint", required=True,
+        "--checkpoint",
+        required=True,
         help="Path to SAM3 checkpoint (.pt)",
     )
     parser.add_argument(
-        "--classes", nargs="+", default=None,
+        "--classes",
+        nargs="+",
+        default=None,
         help="Custom class names (default: all 80 COCO classes)",
     )
     parser.add_argument(
-        "--imgsz", type=int, default=644,
+        "--imgsz",
+        type=int,
+        default=644,
         help="Input image resolution, must be divisible by 14 "
-             "(default: 644 → 46x46 spatial features)",
+        "(default: 644 → 46x46 spatial features)",
     )
     parser.add_argument(
-        "--outdir", type=str, default=".",
+        "--outdir",
+        type=str,
+        default=".",
         help="Output directory for all generated files (default: current dir)",
     )
     parser.add_argument(
-        "--prefix", type=str, default="enc_dec_coco",
+        "--prefix",
+        type=str,
+        default="enc_dec_coco",
         help="Filename prefix for outputs (default: enc_dec_coco)",
     )
     parser.add_argument(
-        "--skip-onnx", action="store_true",
+        "--skip-onnx",
+        action="store_true",
         help="Skip ONNX export (use existing ONNX file)",
     )
     parser.add_argument(
-        "--skip-engine", action="store_true",
+        "--skip-engine",
+        action="store_true",
         help="Skip TRT engine build (only export ONNX + cache text)",
     )
     parser.add_argument(
-        "--skip-text-cache", action="store_true",
+        "--skip-text-cache",
+        action="store_true",
         help="Skip text embedding caching",
     )
     parser.add_argument(
-        "--opt-level", type=int, default=3, choices=[0, 1, 2, 3, 4, 5],
+        "--opt-level",
+        type=int,
+        default=3,
+        choices=[0, 1, 2, 3, 4, 5],
         help="TRT builder optimization level (default: 3). "
-             "Try 0 if build fails with OOM.",
+        "Try 0 if build fails with OOM.",
     )
     parser.add_argument(
-        "--workspace", type=float, default=4.0,
+        "--workspace",
+        type=float,
+        default=4.0,
         help="TRT workspace size in GB (default: 4.0)",
     )
     args = parser.parse_args()
@@ -148,12 +171,14 @@ Examples:
         args.outdir,
         f"{args.prefix}_fp16_{max_classes}.engine",
     )
-    text_cache_path = os.path.join(args.outdir, f"text_cache_coco.pt")
+    text_cache_path = os.path.join(args.outdir, "text_cache_coco.pt")
 
-    print(f"SAM3 COCO Engine Builder")
-    print(f"========================")
+    print("SAM3 COCO Engine Builder")
+    print("========================")
     print(f"  Checkpoint:    {args.checkpoint}")
-    print(f"  Classes:       {max_classes} ({'COCO-80' if not args.classes else 'custom'})")
+    print(
+        f"  Classes:       {max_classes} ({'COCO-80' if not args.classes else 'custom'})"
+    )
     print(f"  Resolution:    {args.imgsz}px → {spatial}x{spatial} spatial")
     print(f"  Output dir:    {args.outdir}")
     print(f"  ONNX:          {onnx_path}")
@@ -166,9 +191,9 @@ Examples:
     if not args.skip_onnx:
         from sam3.trt.export_enc_dec import export_onnx
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Step 1: Exporting ONNX (max_classes={max_classes}, imgsz={args.imgsz})")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         t0 = time.time()
         export_onnx(
@@ -188,9 +213,9 @@ Examples:
     if not args.skip_engine:
         from sam3.trt.build_engine import build_engine
 
-        print(f"\n{'='*60}")
-        print(f"Step 2: Building TRT FP16 engine")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("Step 2: Building TRT FP16 engine")
+        print(f"{'=' * 60}")
 
         t0 = time.time()
         build_engine(
@@ -205,7 +230,7 @@ Examples:
         )
         print(f"  Engine build took {time.time() - t0:.1f}s")
     else:
-        print(f"\nSkipping TRT engine build")
+        print("\nSkipping TRT engine build")
 
     # Step 3: Text embedding cache
     if not args.skip_text_cache:
@@ -215,35 +240,35 @@ Examples:
             output_path=text_cache_path,
         )
     else:
-        print(f"\nSkipping text cache")
+        print("\nSkipping text cache")
 
     elapsed = time.time() - t_total
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Done in {elapsed:.1f}s")
-    print(f"{'='*60}")
-    print(f"\nGenerated files:")
+    print(f"{'=' * 60}")
+    print("\nGenerated files:")
     for path in [onnx_path, engine_path, text_cache_path]:
         if os.path.exists(path):
             size_mb = os.path.getsize(path) / (1024 * 1024)
             print(f"  {path} ({size_mb:.1f} MB)")
 
-    print(f"\nUsage example:")
-    print(f"  # Single image")
-    print(f"  python demo_multiclass.py \\")
-    print(f"      --image x.jpg \\")
-    print(f"      --classes person car bicycle \\")
-    print(f"      --fast --detection-only \\")
-    print(f"      --compile max-autotune \\")
+    print("\nUsage example:")
+    print("  # Single image")
+    print("  python demo_multiclass.py \\")
+    print("      --image x.jpg \\")
+    print("      --classes person car bicycle \\")
+    print("      --fast --detection-only \\")
+    print("      --compile max-autotune \\")
     print(f"      --trt-enc-dec {engine_path} \\")
     print(f"      --text-cache {text_cache_path} \\")
     print(f"      --imgsz {args.imgsz} --warmup 3")
     print()
-    print(f"  # Video")
-    print(f"  python demo_video.py \\")
-    print(f"      --video input.mp4 \\")
-    print(f"      --classes person car bicycle \\")
+    print("  # Video")
+    print("  python demo_video.py \\")
+    print("      --video input.mp4 \\")
+    print("      --classes person car bicycle \\")
     print(f"      --checkpoint {args.checkpoint} \\")
-    print(f"      --compile max-autotune \\")
+    print("      --compile max-autotune \\")
     print(f"      --trt-enc-dec {engine_path} \\")
     print(f"      --text-cache {text_cache_path} \\")
     print(f"      --imgsz {args.imgsz} --track")

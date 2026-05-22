@@ -10,15 +10,12 @@ SAM3 backbone output spec (after scalp=1, for 1008x1008 input):
   Level 2: (B, 256, 72, 72)    — encoder + segmentation head (most important)
 """
 
-from typing import Dict, List, Optional, Tuple
-
+import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import timm
 
 from sam3.model.position_encoding import PositionEmbeddingSine
-
 
 # Target spatial sizes for each FPN level (SAM3 with 1008x1008 input, scalp=1)
 TARGET_SIZES = [(288, 288), (144, 144), (72, 72)]
@@ -35,12 +32,10 @@ class FPNAdapterLevel(nn.Module):
             out_channels, out_channels, kernel_size=3, padding=1, bias=True
         )
 
-    def forward(self, x: torch.Tensor, target_size: Tuple[int, int]) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, target_size: tuple[int, int]) -> torch.Tensor:
         x = self.proj(x)
         if x.shape[-2:] != target_size:
-            x = F.interpolate(
-                x, size=target_size, mode="bilinear", align_corners=False
-            )
+            x = F.interpolate(x, size=target_size, mode="bilinear", align_corners=False)
         x = self.refine(x)
         return x
 
@@ -67,10 +62,10 @@ class StudentBackbone(nn.Module):
         backbone_name: str = "efficientvit_l1.r224_in1k",
         pretrained: bool = True,
         num_levels: int = 3,
-        student_indices: Tuple[int, ...] = (0, 1, 2),
-        target_sizes: Optional[List[Tuple[int, int]]] = None,
+        student_indices: tuple[int, ...] = (0, 1, 2),
+        target_sizes: list[tuple[int, int]] | None = None,
         freeze_backbone: bool = True,
-        img_size: Optional[int] = None,
+        img_size: int | None = None,
     ):
         super().__init__()
 
@@ -130,7 +125,7 @@ class StudentBackbone(nn.Module):
         """Number of trainable parameters (adapter only)."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-    def forward_features(self, x: torch.Tensor) -> List[torch.Tensor]:
+    def forward_features(self, x: torch.Tensor) -> list[torch.Tensor]:
         """Extract multi-scale features from the backbone.
 
         Args:
@@ -153,7 +148,7 @@ class StudentBackbone(nn.Module):
 
         return adapted
 
-    def forward_image(self, samples: torch.Tensor) -> Dict[str, object]:
+    def forward_image(self, samples: torch.Tensor) -> dict[str, object]:
         """Match SAM3VLBackbone.forward_image interface.
 
         Args:

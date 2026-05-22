@@ -9,7 +9,6 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import List, Union
 
 import numpy as np
 import pycocotools.mask as maskUtils
@@ -27,7 +26,7 @@ class Metric:
     image_level: bool
 
     # iou threshold (None is used for image level metrics or to indicate averaging over all thresholds in [0.5:0.95])
-    iou_threshold: Union[float, None]
+    iou_threshold: float | None
 
 
 CGF1_METRICS = [
@@ -131,20 +130,20 @@ class COCOCustom(COCO):
         )
         # END MODIFICATION
         if "caption" in anns[0]:
-            imgIds = set([img["id"] for img in res.dataset["images"]]) & set(
-                [ann["image_id"] for ann in anns]
-            )
+            imgIds = {img["id"] for img in res.dataset["images"]} & {
+                ann["image_id"] for ann in anns
+            }
             res.dataset["images"] = [
                 img for img in res.dataset["images"] if img["id"] in imgIds
             ]
             for id, ann in enumerate(anns):
                 ann["id"] = id + 1
-        elif "bbox" in anns[0] and not anns[0]["bbox"] == []:
+        elif "bbox" in anns[0] and anns[0]["bbox"] != []:
             res.dataset["categories"] = copy.deepcopy(self.dataset["categories"])
             for id, ann in enumerate(anns):
                 bb = ann["bbox"]
                 x1, x2, y1, y2 = [bb[0], bb[0] + bb[2], bb[1], bb[1] + bb[3]]
-                if not "segmentation" in ann:
+                if "segmentation" not in ann:
                     ann["segmentation"] = [[x1, y1, x1, y2, x2, y2, x2, y1]]
                 ann["area"] = bb[2] * bb[3]
                 ann["id"] = id + 1
@@ -154,7 +153,7 @@ class COCOCustom(COCO):
             for id, ann in enumerate(anns):
                 # now only support compressed RLE format as segmentation results
                 ann["area"] = maskUtils.area(ann["segmentation"])
-                if not "bbox" in ann:
+                if "bbox" not in ann:
                     ann["bbox"] = maskUtils.toBbox(ann["segmentation"])
                 ann["id"] = id + 1
                 ann["iscrowd"] = 0
@@ -168,7 +167,7 @@ class COCOCustom(COCO):
                 ann["area"] = (x1 - x0) * (y1 - y0)
                 ann["id"] = id + 1
                 ann["bbox"] = [x0, y0, x1 - x0, y1 - y0]
-        print("DONE (t={:0.2f}s)".format(time.time() - tic))
+        print(f"DONE (t={time.time() - tic:0.2f}s)")
 
         res.dataset["annotations"] = anns
         # MODIFICATION: inherit images
@@ -460,9 +459,9 @@ class CGF1Eval(COCOeval):
             iStr = " {:<18} @[ IoU={:<9}] = {:0.3f}"
             titleStr = "Average " + metric
             iouStr = (
-                "{:0.2f}:{:0.2f}".format(p.iouThrs[0], p.iouThrs[-1])
+                f"{p.iouThrs[0]:0.2f}:{p.iouThrs[-1]:0.2f}"
                 if iouThr is None
-                else "{:0.2f}".format(iouThr)
+                else f"{iouThr:0.2f}"
             )
 
             s = self.eval[metric]
@@ -546,7 +545,7 @@ class CGF1Evaluator:
 
     def __init__(
         self,
-        gt_path: Union[str, List[str]],
+        gt_path: str | list[str],
         iou_type="segm",
         verbose=False,
     ):
@@ -631,7 +630,7 @@ class CGF1Evaluator:
                 coco_eval.cocoDt = coco_dt
                 coco_eval.params.imgIds = [img_id]
                 coco_eval.params.useCats = False
-                img_ids, eval_imgs = _evaluate(coco_eval)
+                _img_ids, eval_imgs = _evaluate(coco_eval)
                 all_scorings.append(eval_imgs)
             selected = self._select_best_scoring(all_scorings)
             all_eval_imgs.append(selected)
@@ -646,9 +645,9 @@ class CGF1Evaluator:
         self.coco_evals[0]._paramsEval = copy.deepcopy(self.coco_evals[0].params)
 
         if self.verbose:
-            print(f"Accumulating results")
+            print("Accumulating results")
         self.coco_evals[0].accumulate()
-        print("cgF1 metric, IoU type={}".format(self.iou_type))
+        print(f"cgF1 metric, IoU type={self.iou_type}")
         self.coco_evals[0].summarize()
         print()
 

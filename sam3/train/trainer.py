@@ -20,6 +20,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from hydra.utils import instantiate
 from iopath.common.file_io import g_pathmgr
+
 from sam3.model.data_misc import BatchedDatapoint
 from sam3.model.model_misc import SAM3Output
 from sam3.model.utils.misc import copy_data_to_device
@@ -34,8 +35,11 @@ from sam3.train.utils.distributed import all_reduce_max, barrier, get_rank
 from sam3.train.utils.logger import Logger, setup_logging
 from sam3.train.utils.train_utils import (
     AverageMeter,
-    collect_dict_keys,
     DurationMeter,
+    MemMeter,
+    Phase,
+    ProgressMeter,
+    collect_dict_keys,
     get_amp_type,
     get_machine_local_and_dist_rank,
     get_resume_checkpoint,
@@ -43,13 +47,9 @@ from sam3.train.utils.train_utils import (
     is_dist_avail_and_initialized,
     log_env_variables,
     makedir,
-    MemMeter,
-    Phase,
-    ProgressMeter,
     set_seeds,
     setup_distributed_backend,
 )
-
 
 CORE_LOSS_KEY = "core_loss"
 
@@ -306,7 +306,7 @@ class Trainer:
             gradient_as_bucket_view=distributed_conf.gradient_as_bucket_view,
             static_graph=distributed_conf.static_graph,
         )
-        if distributed_conf.comms_dtype is not None:  # noqa
+        if distributed_conf.comms_dtype is not None:
             from torch.distributed.algorithms import ddp_comm_hooks
 
             amp_type = get_amp_type(distributed_conf.comms_dtype)

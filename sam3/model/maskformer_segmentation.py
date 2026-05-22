@@ -3,7 +3,6 @@
 # pyre-unsafe
 
 import math
-from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -103,7 +102,7 @@ class SegmentationHead(nn.Module):
 
     def _embed_pixels(
         self,
-        backbone_feats: List[torch.Tensor],
+        backbone_feats: list[torch.Tensor],
         image_ids,
         encoder_hidden_states,
     ) -> torch.Tensor:
@@ -146,12 +145,12 @@ class SegmentationHead(nn.Module):
 
     def forward(
         self,
-        backbone_feats: List[torch.Tensor],
+        backbone_feats: list[torch.Tensor],
         obj_queries: torch.Tensor,
         image_ids,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
         **kwargs,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         if self.use_encoder_inputs:
             assert encoder_hidden_states is not None
 
@@ -202,7 +201,7 @@ class PixelDecoder(nn.Module):
             # Needed to make checkpointing happy. But we don't know if the module is checkpointed, so we disable it by default.
             torch._dynamo.config.optimize_ddp = False
 
-    def forward(self, backbone_feats: List[torch.Tensor]):
+    def forward(self, backbone_feats: list[torch.Tensor]):
         # Assumes backbone features are already projected (C == hidden dim)
 
         prev_fpn = backbone_feats[-1]
@@ -271,14 +270,14 @@ class UniversalSegmentationHead(SegmentationHead):
 
     def forward(
         self,
-        backbone_feats: List[torch.Tensor],
+        backbone_feats: list[torch.Tensor],
         obj_queries: torch.Tensor,
         image_ids,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        prompt: Optional[torch.Tensor] = None,
-        prompt_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        prompt: torch.Tensor | None = None,
+        prompt_mask: torch.Tensor | None = None,
         **kwargs,
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> dict[str, torch.Tensor | None]:
         assert encoder_hidden_states is not None
         bs = encoder_hidden_states.shape[1]
 

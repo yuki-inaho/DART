@@ -8,6 +8,7 @@ from collections import defaultdict
 from typing import List, Optional, Union
 
 import torch
+
 from sam3.train.data.sam3_image_dataset import Datapoint, FindQuery, Object
 
 
@@ -42,7 +43,6 @@ class FilterQueryWithText(FilterDataPointQueries):
     def identify_queries_to_filter(self, datapoint):
         self.obj_ids_to_filter = set()
         del_find_ids = []
-        del_get_ids = []
         for i, f_q in enumerate(datapoint.find_queries):
             if f_q.query_text in self.find_filter_keys:
                 del_find_ids.append(i)
@@ -349,20 +349,16 @@ class FlexibleFilterFindGetQueries:
         self.query_filter.identify_queries_to_filter(datapoint=datapoint)
 
         del_find_ids = []
-        del_get_ids = []
         for i, f_q in enumerate(datapoint.find_queries):
             if self.query_filter._do_filter_query(f_q, i):
                 datapoint.find_queries[i] = None
                 del_find_ids.append(i)
 
         new_find_queries = []
-        new_get_queries = []
 
         find_old_to_new_map = {}
-        get_old_to_new_map = {}
 
         find_counter = 0
-        get_counter = 0
 
         for i, f_q in enumerate(datapoint.find_queries):
             if f_q is not None:

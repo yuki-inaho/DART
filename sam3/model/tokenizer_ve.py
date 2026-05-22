@@ -15,20 +15,18 @@ import io
 import os
 import string
 from functools import lru_cache
-from typing import List, Optional, Union
 
 import ftfy
 import regex as re
 import torch
 from iopath.common.file_io import g_pathmgr
 
-
 # https://stackoverflow.com/q/62691279
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 DEFAULT_CONTEXT_LENGTH = 77
 
 
-@lru_cache()
+@lru_cache
 def bytes_to_unicode():
     """
     Returns list of utf-8 byte and a corresponding list of unicode strings.
@@ -102,7 +100,7 @@ def get_clean_fn(type: str):
     elif type == "whitespace":
         return _clean_whitespace
     else:
-        assert False, f"Invalid clean function ({type})."
+        raise AssertionError(f"Invalid clean function ({type}).")
 
 
 def canonicalize_text(text, *, keep_punctuation_exact_string=None):
@@ -127,12 +125,12 @@ def canonicalize_text(text, *, keep_punctuation_exact_string=None):
     return text.strip()
 
 
-class SimpleTokenizer(object):
+class SimpleTokenizer:
     def __init__(
         self,
-        bpe_path: Union[str, os.PathLike],
-        additional_special_tokens: Optional[List[str]] = None,
-        context_length: Optional[int] = DEFAULT_CONTEXT_LENGTH,
+        bpe_path: str | os.PathLike,
+        additional_special_tokens: list[str] | None = None,
+        context_length: int | None = DEFAULT_CONTEXT_LENGTH,
         clean: str = "lower",
     ):
         self.byte_encoder = bytes_to_unicode()
@@ -170,7 +168,7 @@ class SimpleTokenizer(object):
     def bpe(self, token):
         if token in self.cache:
             return self.cache[token]
-        word = tuple(token[:-1]) + (token[-1] + "</w>",)
+        word = (*tuple(token[:-1]), token[-1] + "</w>")
         pairs = get_pairs(word)
         if not pairs:
             return token + "</w>"
@@ -225,7 +223,7 @@ class SimpleTokenizer(object):
         return text
 
     def __call__(
-        self, texts: Union[str, List[str]], context_length: Optional[int] = None
+        self, texts: str | list[str], context_length: int | None = None
     ) -> torch.LongTensor:
         """Returns the tokenized representation of given input string(s)
         Parameters
@@ -243,7 +241,7 @@ class SimpleTokenizer(object):
         context_length = context_length or self.context_length
         assert context_length, "Please set a valid context length"
         all_tokens = [
-            [self.sot_token_id] + self.encode(text) + [self.eot_token_id]
+            [self.sot_token_id, *self.encode(text), self.eot_token_id]
             for text in texts
         ]
         result = torch.zeros(len(all_tokens), context_length, dtype=torch.long)

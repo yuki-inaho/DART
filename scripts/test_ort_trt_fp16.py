@@ -6,9 +6,9 @@ handle FP16 precision conversion differently from standalone TRT engine builds.
 """
 
 import argparse
-import torch
-import numpy as np
+
 import onnxruntime as ort
+import torch
 from PIL import Image
 from torchvision.transforms import v2
 
@@ -38,12 +38,14 @@ def main():
     if args.image:
         print(f"Loading image: {args.image}")
         img = Image.open(args.image).convert("RGB")
-        transform = v2.Compose([
-            v2.ToDtype(torch.uint8, scale=True),
-            v2.Resize(size=(args.imgsz, args.imgsz)),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ])
+        transform = v2.Compose(
+            [
+                v2.ToDtype(torch.uint8, scale=True),
+                v2.Resize(size=(args.imgsz, args.imgsz)),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
         tensor = v2.functional.to_image(img).to(device)
         tensor = transform(tensor).unsqueeze(0)
     else:
@@ -70,9 +72,11 @@ def main():
             pt_fpn[i].float().flatten().unsqueeze(0),
             t.float().flatten().unsqueeze(0),
         )
-        print(f"  FPN[{i}]: cosine={cos.item():.6f}, "
-              f"range=[{arr.min():.4f}, {arr.max():.4f}], "
-              f"std={arr.std():.4f}")
+        print(
+            f"  FPN[{i}]: cosine={cos.item():.6f}, "
+            f"range=[{arr.min():.4f}, {arr.max():.4f}], "
+            f"std={arr.std():.4f}"
+        )
 
     # Test 2: ORT with TRT EP in FP16
     print("\n--- ORT + TensorRT EP (FP16) ---")
@@ -96,9 +100,11 @@ def main():
                 pt_fpn[i].float().flatten().unsqueeze(0),
                 t.float().flatten().unsqueeze(0),
             )
-            print(f"  FPN[{i}]: cosine={cos.item():.6f}, "
-                  f"range=[{arr.min():.4f}, {arr.max():.4f}], "
-                  f"std={arr.std():.4f}")
+            print(
+                f"  FPN[{i}]: cosine={cos.item():.6f}, "
+                f"range=[{arr.min():.4f}, {arr.max():.4f}], "
+                f"std={arr.std():.4f}"
+            )
     except Exception as e:
         print(f"  Failed: {e}")
 
@@ -124,9 +130,11 @@ def main():
                 pt_fpn[i].float().flatten().unsqueeze(0),
                 t.float().flatten().unsqueeze(0),
             )
-            print(f"  FPN[{i}]: cosine={cos.item():.6f}, "
-                  f"range=[{arr.min():.4f}, {arr.max():.4f}], "
-                  f"std={arr.std():.4f}")
+            print(
+                f"  FPN[{i}]: cosine={cos.item():.6f}, "
+                f"range=[{arr.min():.4f}, {arr.max():.4f}], "
+                f"std={arr.std():.4f}"
+            )
     except Exception as e:
         print(f"  Failed: {e}")
 

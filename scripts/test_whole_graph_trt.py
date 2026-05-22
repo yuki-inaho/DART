@@ -16,21 +16,20 @@ import time
 from pathlib import Path
 
 import torch
-import numpy as np
 
 
 def export_onnx(prompt: str, output_dir: str = "onnx_whole"):
     """Export whole SAM3 model to ONNX with baked-in prompt."""
-    from transformers.models.sam3 import Sam3Processor, Sam3Model
     from PIL import Image
+    from transformers.models.sam3 import Sam3Model, Sam3Processor
 
     print("Loading HuggingFace SAM3 model (eager attention for ONNX compat)...")
     # Export on CPU for compat; use eager attention — SDPA segfaults during
     # torch.onnx.export tracing in newer transformers versions
     device = "cpu"
-    model = Sam3Model.from_pretrained(
-        "facebook/sam3", attn_implementation="eager"
-    ).to(device)
+    model = Sam3Model.from_pretrained("facebook/sam3", attn_implementation="eager").to(
+        device
+    )
     processor = Sam3Processor.from_pretrained("facebook/sam3")
     model.eval()
 
@@ -84,6 +83,7 @@ def export_onnx(prompt: str, output_dir: str = "onnx_whole"):
 
     # Check file size
     import glob
+
     total_size = 0
     for f in glob.glob(str(out_path / "*")):
         total_size += Path(f).stat().st_size
@@ -146,14 +146,16 @@ def build_engine(onnx_path: str, output_path: str):
     with open(output_path, "wb") as f:
         f.write(serialized)
     size_mb = Path(output_path).stat().st_size / 1e6
-    print(f"  Done ({time.perf_counter() - t0:.0f}s), {size_mb:.0f} MB -> {output_path}")
+    print(
+        f"  Done ({time.perf_counter() - t0:.0f}s), {size_mb:.0f} MB -> {output_path}"
+    )
     return output_path
 
 
 def run_pytorch_reference(image_path: str, prompt: str):
     """Run HF SAM3 in PyTorch and return outputs for comparison."""
-    from transformers.models.sam3 import Sam3Processor, Sam3Model
     from PIL import Image
+    from transformers.models.sam3 import Sam3Model, Sam3Processor
 
     print("Running PyTorch reference...")
     model = Sam3Model.from_pretrained("facebook/sam3").to("cuda")
@@ -207,7 +209,7 @@ def run_trt_engine(engine_path: str, pixel_values: torch.Tensor):
         shape = engine.get_tensor_shape(name)
         dtype = _trt_to_torch.get(engine.get_tensor_dtype(name), torch.float32)
         mode = engine.get_tensor_mode(name)
-        is_input = (mode == trt.TensorIOMode.INPUT)
+        is_input = mode == trt.TensorIOMode.INPUT
         io_names.append(name)
         print(f"  {'INPUT' if is_input else 'OUTPUT'}: {name} {list(shape)} {dtype}")
 
@@ -226,7 +228,9 @@ def run_trt_engine(engine_path: str, pixel_values: torch.Tensor):
     stream.synchronize()
 
     # Get outputs (convert to float32)
-    output_names = [n for n in io_names if engine.get_tensor_mode(n) == trt.TensorIOMode.OUTPUT]
+    output_names = [
+        n for n in io_names if engine.get_tensor_mode(n) == trt.TensorIOMode.OUTPUT
+    ]
     outputs = {name: io_bufs[name].float() for name in output_names}
 
     # Benchmark
@@ -259,14 +263,18 @@ def main():
     parser = argparse.ArgumentParser(description="Test whole-graph SAM3 TRT")
     parser.add_argument("--prompt", default="dog", help="Text prompt to bake in")
     parser.add_argument("--image", default="x.jpg", help="Test image")
-    parser.add_argument("--skip-export", action="store_true",
-                        help="Skip ONNX export (reuse existing)")
-    parser.add_argument("--skip-build", action="store_true",
-                        help="Skip engine build (reuse existing)")
-    parser.add_argument("--onnx-dir", default="onnx_whole",
-                        help="ONNX output directory")
-    parser.add_argument("--engine", default="sam3_whole_fp16.engine",
-                        help="TRT engine path")
+    parser.add_argument(
+        "--skip-export", action="store_true", help="Skip ONNX export (reuse existing)"
+    )
+    parser.add_argument(
+        "--skip-build", action="store_true", help="Skip engine build (reuse existing)"
+    )
+    parser.add_argument(
+        "--onnx-dir", default="onnx_whole", help="ONNX output directory"
+    )
+    parser.add_argument(
+        "--engine", default="sam3_whole_fp16.engine", help="TRT engine path"
+    )
     args = parser.parse_args()
 
     onnx_path = str(Path(args.onnx_dir) / "sam3_whole.onnx")
@@ -291,9 +299,9 @@ def main():
 
     # Step 5: Compare — match TRT outputs to reference by shape (dynamo
     # export renames outputs to op names like "einsum", "conv2d_12")
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("QUALITY COMPARISON")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     ref_pairs = [("pred_masks", ref_masks), ("semantic_seg", ref_seg)]
     for name, ref in ref_pairs:
         # Try exact name match first, then match by shape
@@ -317,7 +325,7 @@ def main():
             print(f"  Available: {list(trt_outputs.keys())}")
 
     print(f"\n  TRT whole-graph FP16: {trt_ms:.1f}ms")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

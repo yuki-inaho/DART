@@ -7,15 +7,14 @@ an unimplementable Conv+Gelu kernel at FP16.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
 
 import onnx
-from onnx import helper
 import torch
 import torch.nn as nn
+from onnx import helper
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -74,11 +73,13 @@ def export_and_build(backbone_config, adapter_checkpoint, output_prefix, imgsz=1
     engine_path = f"{output_prefix}_fp16.engine"
 
     # Build backbone
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {backbone_config}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     student_bb = build_student_backbone(
-        config_name=backbone_config, pretrained=True, freeze_backbone=True,
+        config_name=backbone_config,
+        pretrained=True,
+        freeze_backbone=True,
     )
     ckpt = torch.load(adapter_checkpoint, map_location="cpu")
     student_bb.load_state_dict(ckpt["student_state_dict"], strict=False)
@@ -88,7 +89,9 @@ def export_and_build(backbone_config, adapter_checkpoint, output_prefix, imgsz=1
 
     with torch.no_grad():
         fpn0, fpn1, fpn2 = wrapper(dummy)
-    print(f"  fpn_0: {list(fpn0.shape)}, fpn_1: {list(fpn1.shape)}, fpn_2: {list(fpn2.shape)}")
+    print(
+        f"  fpn_0: {list(fpn0.shape)}, fpn_1: {list(fpn1.shape)}, fpn_2: {list(fpn2.shape)}"
+    )
 
     # Dynamo ONNX export (keeps native Gelu op at opset 20)
     print(f"  Exporting ONNX (dynamo) -> {onnx_path}")
@@ -183,8 +186,8 @@ if __name__ == "__main__":
         )
         results.append((name, onnx_path, engine_path))
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("ALL EXPORTS COMPLETE:")
-    for name, onnx_p, eng_p in results:
+    for name, _onnx_p, eng_p in results:
         print(f"  {name}: {eng_p}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")

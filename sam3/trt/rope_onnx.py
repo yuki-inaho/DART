@@ -15,8 +15,6 @@ Usage:
     unpatch_rope(backbone)            # restore original if needed
 """
 
-from typing import Tuple
-
 import torch
 from torch import Tensor
 
@@ -27,7 +25,7 @@ def apply_rotary_enc_real(
     rope_cos: Tensor,
     rope_sin: Tensor,
     repeat_freqs_k: bool = False,
-) -> Tuple[Tensor, Tensor]:
+) -> tuple[Tensor, Tensor]:
     """RoPE via real-valued arithmetic (ONNX-safe).
 
     Complex multiplication (a+bi)(c+di) = (ac-bd) + (ad+bc)i
@@ -78,7 +76,7 @@ def apply_rotary_enc_real(
 def _make_real_apply_rope(rope_cos: Tensor, rope_sin: Tensor):
     """Create a bound _apply_rope replacement for one Attention module."""
 
-    def _apply_rope_real(self, q: Tensor, k: Tensor) -> Tuple[Tensor, Tensor]:
+    def _apply_rope_real(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
         if not self.use_rope:
             return q, k
         return apply_rotary_enc_real(q, k, rope_cos, rope_sin)
@@ -99,7 +97,7 @@ def patch_rope_for_export(backbone) -> None:
 
     trunk = backbone.vision_backbone.trunk
 
-    for name, module in trunk.named_modules():
+    for _name, module in trunk.named_modules():
         if not isinstance(module, Attention):
             continue
         if not module.use_rope or module.freqs_cis is None:
@@ -135,7 +133,7 @@ def unpatch_rope(backbone) -> None:
 
     trunk = backbone.vision_backbone.trunk
 
-    for name, module in trunk.named_modules():
+    for _name, module in trunk.named_modules():
         if not isinstance(module, Attention):
             continue
         if not hasattr(module, "_orig_freqs_cis"):
@@ -232,6 +230,7 @@ def patch_sdpa_for_export(backbone) -> None:
 
     # Also patch the module-level reference in vitdet.py
     from sam3.model import vitdet
+
     vitdet.F.scaled_dot_product_attention = _fp32_sdpa
 
     print("  Patched F.scaled_dot_product_attention -> FP32 attention (global)")
@@ -245,6 +244,7 @@ def unpatch_sdpa(backbone=None) -> None:
     if _orig_sdpa is not None:
         F.scaled_dot_product_attention = _orig_sdpa
         from sam3.model import vitdet
+
         vitdet.F.scaled_dot_product_attention = _orig_sdpa
         _orig_sdpa = None
         print("  Restored original F.scaled_dot_product_attention")

@@ -8,15 +8,15 @@ This means that the model's predictions are thresholded and evaluated as "hard" 
 """
 
 import logging
-from typing import Optional
 
 import numpy as np
 import pycocotools.mask as maskUtils
 from pycocotools.cocoeval import COCOeval
+from scipy.optimize import linear_sum_assignment
+
 from sam3.eval.coco_eval import CocoEvaluator
 from sam3.train.masks_ops import compute_F_measure
 from sam3.train.utils.distributed import is_main_process
-from scipy.optimize import linear_sum_assignment
 
 
 class DemoEval(COCOeval):
@@ -352,9 +352,9 @@ class DemoEval(COCOeval):
             iStr = " {:<18} @[ IoU={:<9}] = {:0.3f}"
             titleStr = "Average " + metric
             iouStr = (
-                "{:0.2f}:{:0.2f}".format(p.iouThrs[0], p.iouThrs[-1])
+                f"{p.iouThrs[0]:0.2f}:{p.iouThrs[-1]:0.2f}"
                 if iouThr is None
-                else "{:0.2f}".format(iouThr)
+                else f"{iouThr:0.2f}"
             )
 
             s = self.eval[metric]
@@ -485,7 +485,7 @@ class DemoEvaluator(CocoEvaluator):
         self,
         coco_gt,
         iou_types,
-        dump_dir: Optional[str],
+        dump_dir: str | None,
         postprocessor,
         threshold=0.5,
         average_by_rarity=False,
@@ -493,7 +493,7 @@ class DemoEvaluator(CocoEvaluator):
         exhaustive_only=False,
         all_exhaustive_only=True,
         compute_JnF=False,
-        metrics_dump_dir: Optional[str] = None,
+        metrics_dump_dir: str | None = None,
     ):
         self.iou_types = iou_types
         self.threshold = threshold
@@ -572,7 +572,7 @@ class DemoEvaluator(CocoEvaluator):
         # if self.rarity_buckets is None:
         self.accumulate(self.eval_img_ids)
         for iou_type, coco_eval in self.coco_evals[0].items():
-            print("Demo metric, IoU type={}".format(iou_type))
+            print(f"Demo metric, IoU type={iou_type}")
             coco_eval.summarize()
 
         if "bbox" in self.coco_evals[0]:

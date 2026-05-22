@@ -16,10 +16,11 @@ from collections import defaultdict
 import torch
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+
 from sam3.train.utils.distributed import is_main_process
 
 try:
-    from tidecv import datasets, TIDE
+    from tidecv import TIDE, datasets
 
     HAS_TIDE = True
 except ImportError:
@@ -101,7 +102,7 @@ class COCOevalCustom(COCOeval):
             _toMask(dts, self.cocoDt)
         # set ignore flag
         for gt in gts:
-            gt["ignore"] = gt["ignore"] if "ignore" in gt else 0
+            gt["ignore"] = gt.get("ignore", 0)
             gt["ignore"] = "iscrowd" in gt and gt["iscrowd"]
             if p.iouType == "keypoints":
                 gt["ignore"] = (gt["num_keypoints"] == 0) or gt["ignore"]

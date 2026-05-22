@@ -14,8 +14,6 @@ Position encodings are deterministic from spatial size (PositionEmbeddingSine)
 and are pre-computed once at init — they are NOT part of the TRT engine.
 """
 
-from typing import Dict, List, Optional, Tuple
-
 import torch
 from torch import Tensor
 
@@ -73,22 +71,18 @@ class TRTBackbone:
         # This makes TRTBackbone work with any backbone engine regardless of
         # tensor naming convention (Meta: images/fpn_0/1/2, HF: pixel_values/conv2d_*).
         self._input_name: str = ""
-        self._output_names: List[str] = []
-        output_shapes: List[Tuple[int, ...]] = []
+        self._output_names: list[str] = []
+        output_shapes: list[tuple[int, ...]] = []
 
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
             shape = tuple(self.engine.get_tensor_shape(name))
-            dtype = _trt_to_torch.get(
-                self.engine.get_tensor_dtype(name), torch.float32
-            )
+            dtype = _trt_to_torch.get(self.engine.get_tensor_dtype(name), torch.float32)
             mode = self.engine.get_tensor_mode(name)
 
             if mode == trt.TensorIOMode.INPUT:
                 self._input_name = name
-                self._input_buf = torch.empty(
-                    shape, dtype=dtype, device=self.device
-                )
+                self._input_buf = torch.empty(shape, dtype=dtype, device=self.device)
             else:
                 self._output_names.append(name)
                 output_shapes.append(shape)
@@ -106,7 +100,7 @@ class TRTBackbone:
         output_shapes = [output_shapes[i] for i in sorted_indices]
 
         # Allocate output buffers in sorted order
-        self._output_bufs: List[Tensor] = []
+        self._output_bufs: list[Tensor] = []
         for name, shape in zip(self._output_names, output_shapes):
             out_dtype = _trt_to_torch.get(
                 self.engine.get_tensor_dtype(name), torch.float32
@@ -116,15 +110,15 @@ class TRTBackbone:
             )
 
         # Log I/O for debugging
-        print(f"  Engine input: {self._input_name} "
-              f"{list(self._input_buf.shape)} {self._input_buf.dtype}")
+        print(
+            f"  Engine input: {self._input_name} "
+            f"{list(self._input_buf.shape)} {self._input_buf.dtype}"
+        )
         for name, buf in zip(self._output_names, self._output_bufs):
             print(f"  Engine output: {name} {list(buf.shape)} {buf.dtype}")
 
         # Set tensor addresses in the execution context
-        self.context.set_tensor_address(
-            self._input_name, self._input_buf.data_ptr()
-        )
+        self.context.set_tensor_address(self._input_name, self._input_buf.data_ptr())
         for name, buf in zip(self._output_names, self._output_bufs):
             self.context.set_tensor_address(name, buf.data_ptr())
 
@@ -141,9 +135,7 @@ class TRTBackbone:
             f"({sum(b.nelement() * b.element_size() for b in self._output_bufs) / 1e6:.1f}MB output buffers)"
         )
 
-    def _precompute_pos_enc(
-        self, pos_module=None, output_shapes=None
-    ) -> List[Tensor]:
+    def _precompute_pos_enc(self, pos_module=None, output_shapes=None) -> list[Tensor]:
         """Compute PositionEmbeddingSine for each FPN spatial size."""
         if pos_module is not None:
             pos_enc = []
@@ -164,7 +156,7 @@ class TRTBackbone:
             pos_enc.append(pe)
         return pos_enc
 
-    def forward_image(self, samples: Tensor) -> Dict:
+    def forward_image(self, samples: Tensor) -> dict:
         """Run TRT backbone inference.
 
         Args:
@@ -201,9 +193,7 @@ class TRTBackbone:
             "sam2_backbone_out": None,
         }
 
-    def forward_image_async(
-        self, samples: Tensor
-    ) -> Tuple[Dict, torch.cuda.Event]:
+    def forward_image_async(self, samples: Tensor) -> tuple[dict, torch.cuda.Event]:
         """Start TRT backbone inference without blocking the default stream.
 
         Same as ``forward_image()`` but returns immediately after launching
@@ -302,9 +292,7 @@ class TRTSplitBackbone:
             mode = self._engine1.get_tensor_mode(name)
             if mode == trt.TensorIOMode.INPUT:
                 self._p1_input_name = name
-                self._p1_input_buf = torch.empty(
-                    shape, dtype=dtype, device=self.device
-                )
+                self._p1_input_buf = torch.empty(shape, dtype=dtype, device=self.device)
                 print(f"  Part1 input:  {name} {list(shape)} {dtype}")
             else:
                 self._p1_output_name = name
@@ -326,8 +314,8 @@ class TRTSplitBackbone:
         self._ctx2 = self._engine2.create_execution_context()
 
         self._p2_input_name = ""
-        self._p2_output_names: List[str] = []
-        p2_output_shapes: List[Tuple[int, ...]] = []
+        self._p2_output_names: list[str] = []
+        p2_output_shapes: list[tuple[int, ...]] = []
 
         for i in range(self._engine2.num_io_tensors):
             name = self._engine2.get_tensor_name(i)
@@ -338,9 +326,7 @@ class TRTSplitBackbone:
             mode = self._engine2.get_tensor_mode(name)
             if mode == trt.TensorIOMode.INPUT:
                 self._p2_input_name = name
-                self._p2_input_buf = torch.empty(
-                    shape, dtype=dtype, device=self.device
-                )
+                self._p2_input_buf = torch.empty(shape, dtype=dtype, device=self.device)
                 print(f"  Part2 input:  {name} {list(shape)} {dtype}")
             else:
                 self._p2_output_names.append(name)
@@ -355,7 +341,7 @@ class TRTSplitBackbone:
         self._p2_output_names = [self._p2_output_names[i] for i in sorted_idx]
         p2_output_shapes = [p2_output_shapes[i] for i in sorted_idx]
 
-        self._p2_output_bufs: List[Tensor] = []
+        self._p2_output_bufs: list[Tensor] = []
         for name, shape in zip(self._p2_output_names, p2_output_shapes):
             out_dtype = _trt_to_torch.get(
                 self._engine2.get_tensor_dtype(name), torch.float32
@@ -391,13 +377,14 @@ class TRTSplitBackbone:
                 for s in output_shapes
             ]
         from sam3.model.position_encoding import PositionEmbeddingSine
+
         pe_module = PositionEmbeddingSine(num_pos_feats=256, normalize=True)
         return [
             pe_module(torch.zeros(s, device=self.device)).detach().to(self.device)
             for s in output_shapes
         ]
 
-    def forward_part1_async(self, samples: Tensor) -> Tuple[Tensor, torch.cuda.Event]:
+    def forward_part1_async(self, samples: Tensor) -> tuple[Tensor, torch.cuda.Event]:
         """Run Part1 on stream1 (non-blocking). Returns (output_buf, done_event)."""
         self._p1_input_buf.copy_(samples)
         copy_event = torch.cuda.current_stream(self.device).record_event()
@@ -406,7 +393,7 @@ class TRTSplitBackbone:
         done = self._stream1.record_event()
         return self._p1_output_buf, done
 
-    def forward_part2(self, intermediate: Tensor) -> Dict:
+    def forward_part2(self, intermediate: Tensor) -> dict:
         """Run Part2 on stream2 (blocking). Returns backbone_out dict.
 
         Uses a non-default stream to avoid TRT's extra cudaStreamSynchronize()
@@ -426,7 +413,7 @@ class TRTSplitBackbone:
             "sam2_backbone_out": None,
         }
 
-    def forward_image(self, samples: Tensor) -> Dict:
+    def forward_image(self, samples: Tensor) -> dict:
         """Run full backbone sequentially (Part1 → Part2). For non-pipelined use.
 
         Both parts use non-default streams to avoid TRT default-stream overhead.
@@ -503,28 +490,18 @@ class TRTTrunk:
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
             shape = tuple(self.engine.get_tensor_shape(name))
-            dtype = _trt_to_torch.get(
-                self.engine.get_tensor_dtype(name), torch.float32
-            )
+            dtype = _trt_to_torch.get(self.engine.get_tensor_dtype(name), torch.float32)
             mode = self.engine.get_tensor_mode(name)
 
             if mode == trt.TensorIOMode.INPUT:
                 self._input_name = name
-                self._input_buf = torch.empty(
-                    shape, dtype=dtype, device=self.device
-                )
+                self._input_buf = torch.empty(shape, dtype=dtype, device=self.device)
             else:
                 self._output_name = name
-                self._output_buf = torch.empty(
-                    shape, dtype=dtype, device=self.device
-                )
+                self._output_buf = torch.empty(shape, dtype=dtype, device=self.device)
 
-        self.context.set_tensor_address(
-            self._input_name, self._input_buf.data_ptr()
-        )
-        self.context.set_tensor_address(
-            self._output_name, self._output_buf.data_ptr()
-        )
+        self.context.set_tensor_address(self._input_name, self._input_buf.data_ptr())
+        self.context.set_tensor_address(self._output_name, self._output_buf.data_ptr())
 
         self._stream = torch.cuda.Stream(device=self.device)
 
@@ -534,7 +511,7 @@ class TRTTrunk:
             f"  Output: {self._output_name} {list(self._output_buf.shape)} {self._output_buf.dtype}"
         )
 
-    def __call__(self, x: Tensor) -> List[Tensor]:
+    def __call__(self, x: Tensor) -> list[Tensor]:
         """Run TRT trunk inference.
 
         Args:

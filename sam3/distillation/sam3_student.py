@@ -6,25 +6,21 @@ backbone + FPN adapter. Everything else (encoder, decoder, segmentation head,
 text encoder, scoring) is loaded from the teacher checkpoint and frozen.
 """
 
-from typing import Dict, List, Optional
-
 import pkg_resources
 import torch
 import torch.nn as nn
 from iopath.common.file_io import g_pathmgr
 
-from sam3.model.position_encoding import PositionEmbeddingSine
-from sam3.model.vl_combiner import SAM3VLBackbone
+from sam3.distillation.student_backbone import StudentBackbone, build_student_backbone
 from sam3.model_builder import (
     _create_dot_product_scoring,
     _create_geometry_encoder,
-    _create_segmentation_head,
-    _create_sam3_transformer,
-    _create_text_encoder,
     _create_sam3_model,
+    _create_sam3_transformer,
+    _create_segmentation_head,
+    _create_text_encoder,
     download_ckpt_from_hf,
 )
-from sam3.distillation.student_backbone import StudentBackbone, build_student_backbone
 
 
 class StudentVLBackbone(nn.Module):
@@ -41,7 +37,7 @@ class StudentVLBackbone(nn.Module):
         # Match SAM3VLBackbone interface
         self.scalp = 0  # StudentBackbone already handles this
 
-    def forward_image(self, samples: torch.Tensor) -> Dict:
+    def forward_image(self, samples: torch.Tensor) -> dict:
         return self.student_backbone.forward_image(samples)
 
     def forward_text(
@@ -52,7 +48,8 @@ class StudentVLBackbone(nn.Module):
         Reuses SAM3VLBackbone._forward_text_no_ack_ckpt logic.
         """
         from copy import copy
-        from torch.nn.attention import sdpa_kernel, SDPBackend
+
+        from torch.nn.attention import SDPBackend, sdpa_kernel
 
         output = {}
         text_to_encode = copy(captions)
@@ -73,9 +70,7 @@ class StudentVLBackbone(nn.Module):
             )
 
         if additional_text is not None:
-            output["additional_text_features"] = text_memory[
-                :, -len(additional_text) :
-            ]
+            output["additional_text_features"] = text_memory[:, -len(additional_text) :]
             output["additional_text_mask"] = text_attention_mask[
                 -len(additional_text) :
             ]
@@ -91,9 +86,7 @@ class StudentVLBackbone(nn.Module):
     def forward(self, samples, captions, input_boxes=None, additional_text=None):
         output = self.forward_image(samples)
         device = output["vision_features"].device
-        output.update(
-            self.forward_text(captions, input_boxes, additional_text, device)
-        )
+        output.update(self.forward_text(captions, input_boxes, additional_text, device))
         return output
 
 
@@ -178,7 +171,9 @@ def freeze_teacher_components(model: nn.Module):
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print(f"Trainable: {trainable:,} / {total:,} parameters ({100*trainable/total:.2f}%)")
+    print(
+        f"Trainable: {trainable:,} / {total:,} parameters ({100 * trainable / total:.2f}%)"
+    )
 
 
 def build_sam3_student_model(

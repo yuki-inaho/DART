@@ -2,7 +2,9 @@
 """Benchmark torch.compile on PyTorch FP16 backbone."""
 
 import time
+
 import torch
+
 from sam3.model_builder import build_sam3_image_model
 
 device = "cuda"
@@ -30,7 +32,9 @@ def main():
 
     print("Loading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path="sam3.pt", eval_mode=True,
+        device=device,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     backbone = model.backbone
 

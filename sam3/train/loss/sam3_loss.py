@@ -3,6 +3,7 @@
 # pyre-unsafe
 
 import torch
+
 from sam3.model.model_misc import SAM3Output
 from sam3.train.utils.distributed import get_world_size
 

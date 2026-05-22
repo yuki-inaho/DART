@@ -7,9 +7,10 @@ Focuses on approaches that work without triton:
 - Monkey-patching triton for inductor backend
 """
 
-import gc
 import time
+
 import torch
+
 from sam3.model_builder import build_sam3_image_model
 
 device = "cuda"
@@ -36,7 +37,9 @@ def main():
 
     print("Loading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path="sam3.pt", eval_mode=True,
+        device=device,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     backbone = model.backbone
     torch.backends.cudnn.benchmark = True
@@ -49,7 +52,8 @@ def main():
     print("\n=== Patching triton for inductor ===")
     try:
         from triton.compiler import compiler as triton_compiler
-        if not hasattr(triton_compiler, 'triton_key'):
+
+        if not hasattr(triton_compiler, "triton_key"):
             # Alias get_cache_key as triton_key
             triton_compiler.triton_key = triton_compiler.get_cache_key
             print("  Patched triton_key = get_cache_key")
@@ -71,7 +75,7 @@ def main():
                 t0 = time.perf_counter()
                 compiled_inductor(dummy)
                 torch.cuda.synchronize()
-                print(f"    Warmup {i}: {(time.perf_counter()-t0)*1000:.0f}ms")
+                print(f"    Warmup {i}: {(time.perf_counter() - t0) * 1000:.0f}ms")
         bench(compiled_inductor, dummy, "inductor(reduce-overhead)")
     except Exception as e:
         print(f"  FAILED: {e}")
@@ -90,7 +94,7 @@ def main():
                 t0 = time.perf_counter()
                 compiled_autotune(dummy)
                 torch.cuda.synchronize()
-                print(f"    Warmup {i}: {(time.perf_counter()-t0)*1000:.0f}ms")
+                print(f"    Warmup {i}: {(time.perf_counter() - t0) * 1000:.0f}ms")
         bench(compiled_autotune, dummy, "inductor(max-autotune)")
     except Exception as e:
         print(f"  FAILED: {e}")
@@ -108,7 +112,7 @@ def main():
                 t0 = time.perf_counter()
                 compiled_default(dummy)
                 torch.cuda.synchronize()
-                print(f"    Warmup {i}: {(time.perf_counter()-t0)*1000:.0f}ms")
+                print(f"    Warmup {i}: {(time.perf_counter() - t0) * 1000:.0f}ms")
         bench(compiled_default, dummy, "inductor(default)")
     except Exception as e:
         print(f"  FAILED: {e}")
@@ -117,7 +121,13 @@ def main():
     print("\n=== Final long benchmark (200 iters) ===")
     bench(backbone.forward_image, dummy, "Baseline", n_warmup=20, n_iters=200)
     try:
-        bench(compiled_inductor, dummy, "inductor(reduce-overhead)", n_warmup=20, n_iters=200)
+        bench(
+            compiled_inductor,
+            dummy,
+            "inductor(reduce-overhead)",
+            n_warmup=20,
+            n_iters=200,
+        )
     except:
         pass
 

@@ -5,24 +5,25 @@ import json
 import os
 import tempfile
 from collections import defaultdict
-from typing import Dict, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 import pycocotools.mask
+
 from sam3.eval.cgf1_eval import CGF1_METRICS
 from sam3.eval.conversion_util import (
     convert_ytbvis_to_cocovid_gt,
     convert_ytbvis_to_cocovid_pred,
 )
 from sam3.eval.hota_eval_toolkit.run_ytvis_eval import run_ytvis_eval
-from sam3.eval.teta_eval_toolkit import config, Evaluator, metrics
+from sam3.eval.teta_eval_toolkit import Evaluator, config, metrics
 from sam3.eval.teta_eval_toolkit.datasets import COCO, TAO
 from sam3.eval.ytvis_coco_wrapper import YTVIS
 from sam3.eval.ytvis_eval import VideoDemoF1Eval, YTVISeval
 from sam3.train.nms_helper import process_frame_level_nms, process_track_level_nms
 
 
-def _get_metric_index(metric_name: str, iou_threshold: Optional[float] = None) -> int:
+def _get_metric_index(metric_name: str, iou_threshold: float | None = None) -> int:
     """
     Find the index of a metric in CGF1_METRICS by name and IoU threshold.
 
@@ -57,14 +58,14 @@ class YTVISPredFileEvaluator(BasePredFileEvaluator):
         self,
         gt_ann_file: str,
         dataset_name: str = "video",
-        iou_types: Optional[Sequence[str]] = None,
+        iou_types: Sequence[str] | None = None,
     ):
         self.gt_ann_file = gt_ann_file
         self.dataset_name = dataset_name
         self.iou_types = list(iou_types) if iou_types is not None else ["bbox", "segm"]
         assert all(iou_type in ["bbox", "segm"] for iou_type in self.iou_types)
 
-    def evaluate(self, pred_file: str) -> Dict[str, float]:
+    def evaluate(self, pred_file: str) -> dict[str, float]:
         # use our internal video evaluation toolkit for YT-VIS pred file
         # (i.e. the same one we're using for video phrase AP)
         results = {}
@@ -122,14 +123,14 @@ class VideoPhraseApEvaluator(BasePredFileEvaluator):
         self,
         gt_ann_file: str,
         dataset_name: str = "video",
-        iou_types: Optional[Sequence[str]] = None,
+        iou_types: Sequence[str] | None = None,
     ):
         self.gt_ann_file = gt_ann_file
         self.dataset_name = dataset_name
         self.iou_types = list(iou_types) if iou_types is not None else ["bbox", "segm"]
         assert all(iou_type in ["bbox", "segm"] for iou_type in self.iou_types)
 
-    def evaluate(self, pred_file: str) -> Dict[str, float]:
+    def evaluate(self, pred_file: str) -> dict[str, float]:
         with open(self.gt_ann_file) as f:
             gt = json.load(f)
         with open(pred_file) as f:
@@ -191,7 +192,7 @@ class VideoCGF1Evaluator(BasePredFileEvaluator):
         gt_ann_file: str,
         dataset_name: str = "video",
         prob_thresh: float = 0.5,
-        iou_types: Optional[Sequence[str]] = None,
+        iou_types: Sequence[str] | None = None,
     ):
         self.gt_ann_file = gt_ann_file
         self.dataset_name = dataset_name
@@ -199,7 +200,7 @@ class VideoCGF1Evaluator(BasePredFileEvaluator):
         self.iou_types = list(iou_types) if iou_types is not None else ["bbox", "segm"]
         assert all(iou_type in ["bbox", "segm"] for iou_type in self.iou_types)
 
-    def evaluate(self, pred_file: str) -> Dict[str, float]:
+    def evaluate(self, pred_file: str) -> dict[str, float]:
         with open(self.gt_ann_file) as f:
             gt = json.load(f)
         with open(pred_file) as f:
@@ -403,7 +404,7 @@ class VideoTetaEvaluator(BasePredFileEvaluator):
         print(f"Saved processed predictions to {processed_path}")
         return processed_path
 
-    def evaluate(self, pred_file: str) -> Tuple[Dict[str, float], Dict]:
+    def evaluate(self, pred_file: str) -> tuple[dict[str, float], dict]:
         """Main evaluation method"""
 
         print(f"Evaluating TETA Metric with {self.nms_strategy.upper()} NMS strategy")
@@ -500,7 +501,7 @@ class VideoPhraseHotaEvaluator(BasePredFileEvaluator):
         gt_ann_file: str,
         dataset_name: str = "video",
         prob_thresh: float = 0.5,
-        iou_types: Optional[Sequence[str]] = None,
+        iou_types: Sequence[str] | None = None,
         compute_video_mot_hota: bool = False,
     ):
         self.gt_ann_file = gt_ann_file
@@ -525,7 +526,7 @@ class VideoPhraseHotaEvaluator(BasePredFileEvaluator):
         # If True, compute video MOT HOTA, aggregating predictions/GT from all categories.
         self.compute_video_mot_hota = compute_video_mot_hota
 
-    def evaluate(self, pred_file: str) -> Dict[str, float]:
+    def evaluate(self, pred_file: str) -> dict[str, float]:
         # use the YT-VIS evaluation toolkit in TrackEval
 
         with open(self.gt_ann_file) as f:

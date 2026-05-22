@@ -2,7 +2,6 @@
 
 # pyre-unsafe
 
-from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -415,7 +414,7 @@ class MaskEncoder(nn.Module):
         self.mask_downsampler = mask_downsampler
         self.position_encoding = position_encoding
 
-    def forward(self, masks, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, masks, *args, **kwargs) -> tuple[torch.Tensor, torch.Tensor]:
         masks = self.mask_downsampler(masks)
         masks_pos = self.position_encoding(masks).to(masks.dtype)
 
@@ -450,7 +449,7 @@ class FusedMaskEncoder(MaskEncoder):
         masks: torch.Tensor,
         pix_feat: torch.Tensor,
         **kwargs,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         masks = self.mask_downsampler(masks)
 
         ## Fuse pix_feats and downsampled masks

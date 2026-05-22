@@ -7,11 +7,8 @@ avoids the TRT FP16 numerical bug seen with the Meta SAM3 codebase.
 """
 
 import argparse
-import os
-import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -26,9 +23,9 @@ class HFBackboneWrapper(nn.Module):
     def forward(self, pixel_values: torch.Tensor):
         outputs = self.vision_model(pixel_values)
         # HF Sam3VisionModel returns Sam3VisionEncoderOutput
-        if hasattr(outputs, 'multi_scale_features'):
+        if hasattr(outputs, "multi_scale_features"):
             fpn = outputs.multi_scale_features
-        elif hasattr(outputs, 'fpn_hidden_states'):
+        elif hasattr(outputs, "fpn_hidden_states"):
             fpn = outputs.fpn_hidden_states
         else:
             raise RuntimeError(f"Unknown output attrs: {list(outputs.keys())}")
@@ -51,15 +48,16 @@ def main():
     # Step 1: Create HF vision model from config (random weights - we only
     # need the architecture to test if TRT FP16 works)
     print(f"Creating HF vision model from config: {args.model_id}")
-    from transformers import Sam3Config
-    from transformers import Sam3VisionModel
+    from transformers import Sam3Config, Sam3VisionModel
 
     config = Sam3Config.from_pretrained(args.model_id)
     vc = config.vision_config
-    print(f"  Vision backbone: hidden_size={vc.backbone_config.hidden_size}, "
-          f"layers={vc.backbone_config.num_hidden_layers}, "
-          f"heads={vc.backbone_config.num_attention_heads}, "
-          f"fpn_hidden={vc.fpn_hidden_size}")
+    print(
+        f"  Vision backbone: hidden_size={vc.backbone_config.hidden_size}, "
+        f"layers={vc.backbone_config.num_hidden_layers}, "
+        f"heads={vc.backbone_config.num_attention_heads}, "
+        f"fpn_hidden={vc.fpn_hidden_size}"
+    )
 
     # Force eager attention (no SDPA) for clean ONNX tracing
     vc.backbone_config._attn_implementation = "eager"
@@ -67,7 +65,9 @@ def main():
     # Instantiate vision model with random weights (no download)
     print("  Instantiating Sam3VisionModel with random weights (eager attn)...")
     vision_model = Sam3VisionModel(vc).to(device).eval()
-    print(f"  Vision model params: {sum(p.numel() for p in vision_model.parameters()) / 1e6:.1f}M")
+    print(
+        f"  Vision model params: {sum(p.numel() for p in vision_model.parameters()) / 1e6:.1f}M"
+    )
 
     # Check what the vision model outputs
     print("\n--- Testing HF vision model ---")
@@ -77,9 +77,9 @@ def main():
 
     print(f"  Output type: {type(pt_out)}")
     # Try different attribute names across HF versions
-    if hasattr(pt_out, 'multi_scale_features'):
+    if hasattr(pt_out, "multi_scale_features"):
         fpn = pt_out.multi_scale_features
-    elif hasattr(pt_out, 'fpn_hidden_states'):
+    elif hasattr(pt_out, "fpn_hidden_states"):
         fpn = pt_out.fpn_hidden_states
     else:
         print(f"  Available attrs: {[a for a in dir(pt_out) if not a.startswith('_')]}")
@@ -88,9 +88,11 @@ def main():
 
     print(f"  FPN levels: {len(fpn)}")
     for i, t in enumerate(fpn):
-        print(f"    FPN[{i}]: shape={t.shape}, dtype={t.dtype}, "
-              f"range=[{t.min().item():.4f}, {t.max().item():.4f}], "
-              f"std={t.std().item():.4f}")
+        print(
+            f"    FPN[{i}]: shape={t.shape}, dtype={t.dtype}, "
+            f"range=[{t.min().item():.4f}, {t.max().item():.4f}], "
+            f"std={t.std().item():.4f}"
+        )
 
     # Step 2: Wrap and export to ONNX
     print("\n--- Exporting to ONNX ---")
@@ -123,8 +125,10 @@ def main():
 
     # Print ONNX summary
     try:
-        import onnx
         from collections import Counter
+
+        import onnx
+
         model_onnx = onnx.load(onnx_path)
         graph = model_onnx.graph
         op_counts = Counter(n.op_type for n in graph.node)
@@ -213,9 +217,11 @@ def main():
             pt_f.flatten().unsqueeze(0),
             trt_f.flatten().unsqueeze(0),
         )
-        print(f"  FPN[{i}]: cosine={cos.item():.6f}, "
-              f"max_diff={diff.max().item():.4f}, "
-              f"pt_std={pt_f.std().item():.4f}, trt_std={trt_f.std().item():.4f}")
+        print(
+            f"  FPN[{i}]: cosine={cos.item():.6f}, "
+            f"max_diff={diff.max().item():.4f}, "
+            f"pt_std={pt_f.std().item():.4f}, trt_std={trt_f.std().item():.4f}"
+        )
 
     # Final verdict
     cos_last = torch.nn.functional.cosine_similarity(

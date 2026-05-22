@@ -6,7 +6,6 @@ import fnmatch
 import inspect
 import itertools
 import logging
-import types
 from typing import (
     Any,
     Callable,

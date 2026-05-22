@@ -25,10 +25,6 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sam3.coco_classes import COCO_CLASSES
-from sam3.efficient_backbone import build_efficientsam3_model
-from sam3.model_builder import build_sam3_image_model
-from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
 from scripts.benchmark_pruning_quality import (
     compute_ap_per_class,
     find_image_label_pairs,
@@ -37,9 +33,18 @@ from scripts.benchmark_pruning_quality import (
     yolo_to_xyxy,
 )
 
+from sam3.coco_classes import COCO_CLASSES
+from sam3.efficient_backbone import build_efficientsam3_model
+from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+from sam3.model_builder import build_sam3_image_model
+
 # Checkpoint filename -> (backbone_type, model_name, display_name)
 EFFICIENT_MODELS = {
-    "efficient_sam3_efficientvit_m_geo_ft.pt": ("efficientvit", "b1", "EfficientViT-B1"),
+    "efficient_sam3_efficientvit_m_geo_ft.pt": (
+        "efficientvit",
+        "b1",
+        "EfficientViT-B1",
+    ),
     "efficient_sam3_repvit_l.pt": ("repvit", "m2.3", "RepViT-M2.3"),
     "efficient_sam3_tinyvit_m_geo_ft.pt": ("tinyvit", "11m", "TinyViT-11M"),
 }
@@ -58,10 +63,10 @@ def evaluate_model(
     device,
 ):
     """Run COCO evaluation for a single model."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Model: {display_name}")
     print(f"  Resolution: {imgsz}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     predictor = Sam3MultiClassPredictorFast(
         model,
@@ -105,14 +110,19 @@ def evaluate_model(
 
         img_w, img_h = image.size
         labels = load_yolo_labels(label_path)
-        labels = [(cid, cx, cy, w, h) for cid, cx, cy, w, h in labels if cid in eval_cids]
+        labels = [
+            (cid, cx, cy, w, h) for cid, cx, cy, w, h in labels if cid in eval_cids
+        ]
         gt_boxes, gt_cids = yolo_to_xyxy(labels, img_w, img_h)
 
         torch.cuda.synchronize()
         t0 = time.perf_counter()
         state = predictor.set_image(image)
         results = predictor.predict(
-            state, confidence_threshold=confidence, nms_threshold=nms, per_class_nms=False,
+            state,
+            confidence_threshold=confidence,
+            nms_threshold=nms,
+            per_class_nms=False,
         )
         torch.cuda.synchronize()
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -127,16 +137,23 @@ def evaluate_model(
             pred_scores = torch.zeros(0)
             pred_cids = torch.zeros(0, dtype=torch.long)
 
-        all_img_data.append({
-            "pred_boxes": pred_boxes,
-            "pred_scores": pred_scores,
-            "pred_cids": pred_cids,
-            "gt_boxes": gt_boxes,
-            "gt_cids": gt_cids,
-        })
+        all_img_data.append(
+            {
+                "pred_boxes": pred_boxes,
+                "pred_scores": pred_scores,
+                "pred_cids": pred_cids,
+                "gt_boxes": gt_boxes,
+                "gt_cids": gt_cids,
+            }
+        )
 
         m = match_predictions_to_gt(
-            pred_boxes, pred_scores, pred_cids, gt_boxes, gt_cids, iou_threshold=iou_threshold,
+            pred_boxes,
+            pred_scores,
+            pred_cids,
+            gt_boxes,
+            gt_cids,
+            iou_threshold=iou_threshold,
         )
         total_tp += m["tp"]
         total_fp += m["fp"]
@@ -152,7 +169,9 @@ def evaluate_model(
     cls_acc = total_cls_correct / max(total_tp, 1)
     avg_ms = total_ms / max(n_evaluated, 1)
 
-    mAP, per_class_ap = compute_ap_per_class(all_img_data, iou_threshold=iou_threshold, num_classes=80)
+    mAP, per_class_ap = compute_ap_per_class(
+        all_img_data, iou_threshold=iou_threshold, num_classes=80
+    )
 
     print(
         f"  Results: Dets={total_preds}, GT={total_gt}, "
@@ -191,8 +210,12 @@ def main():
     parser.add_argument("--coco", action="store_true")
     parser.add_argument("--classes", nargs="+", type=str, default=None)
     parser.add_argument("--most-annotations", action="store_true")
-    parser.add_argument("--skip-full", action="store_true", help="Skip full SAM3 baseline")
-    parser.add_argument("--only", type=str, default=None, help="Only run one model (e.g. efficientvit)")
+    parser.add_argument(
+        "--skip-full", action="store_true", help="Skip full SAM3 baseline"
+    )
+    parser.add_argument(
+        "--only", type=str, default=None, help="Only run one model (e.g. efficientvit)"
+    )
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
 
@@ -207,7 +230,9 @@ def main():
     eval_cids = {class_to_idx[name] for name in class_names if name in class_to_idx}
 
     pairs = find_image_label_pairs(
-        args.images_dir, args.labels_dir, args.max_images,
+        args.images_dir,
+        args.labels_dir,
+        args.max_images,
         most_annotations=args.most_annotations,
     )
     if not pairs:
@@ -229,16 +254,32 @@ def main():
             eval_mode=True,
         )
         result = evaluate_model(
-            full_model, "SAM3 (ViT-H)", class_names, eval_cids, pairs,
-            args.imgsz, args.confidence, args.nms, args.iou_threshold, args.device,
+            full_model,
+            "SAM3 (ViT-H)",
+            class_names,
+            eval_cids,
+            pairs,
+            args.imgsz,
+            args.confidence,
+            args.nms,
+            args.iou_threshold,
+            args.device,
         )
         results_table.append(result)
         del full_model
         torch.cuda.empty_cache()
 
     # 2. EfficientSAM3 variants
-    for ckpt_name, (backbone_type, model_name, display_name) in EFFICIENT_MODELS.items():
-        if args.only and args.only not in ckpt_name and args.only not in display_name.lower():
+    for ckpt_name, (
+        backbone_type,
+        model_name,
+        display_name,
+    ) in EFFICIENT_MODELS.items():
+        if (
+            args.only
+            and args.only not in ckpt_name
+            and args.only not in display_name.lower()
+        ):
             continue
 
         ckpt_path = os.path.join(args.efficient_dir, ckpt_name)
@@ -258,12 +299,21 @@ def main():
         except Exception as e:
             print(f"  ERROR loading {display_name}: {e}")
             import traceback
+
             traceback.print_exc()
             continue
 
         result = evaluate_model(
-            model, display_name, class_names, eval_cids, pairs,
-            args.imgsz, args.confidence, args.nms, args.iou_threshold, args.device,
+            model,
+            display_name,
+            class_names,
+            eval_cids,
+            pairs,
+            args.imgsz,
+            args.confidence,
+            args.nms,
+            args.iou_threshold,
+            args.device,
         )
         results_table.append(result)
         del model
@@ -271,27 +321,33 @@ def main():
 
     # Summary
     W = 100
-    print(f"\n\n{'='*W}")
-    print(f"EFFICIENTSAM3 QUALITY BENCHMARK ({len(pairs)} images, {len(class_names)} classes, {args.imgsz}px)")
-    print(f"{'='*W}")
+    print(f"\n\n{'=' * W}")
+    print(
+        f"EFFICIENTSAM3 QUALITY BENCHMARK ({len(pairs)} images, {len(class_names)} classes, {args.imgsz}px)"
+    )
+    print(f"{'=' * W}")
     header = (
         f"  {'Model':<22s}  {'Dets':>6s}  "
         f"{'Prec':>6s}  {'Rec':>6s}  {'F1':>6s}  "
         f"{'ClsAcc':>6s}  {'mAP@50':>7s}  {'ms/img':>7s}"
     )
     print(header)
-    print(f"  {'-'*(W-2)}")
+    print(f"  {'-' * (W - 2)}")
 
     baseline_map = results_table[0]["mAP50"] if results_table else None
     for r in results_table:
-        rel = f"({r['mAP50']/baseline_map*100:.0f}%)" if baseline_map and baseline_map > 0 else ""
+        rel = (
+            f"({r['mAP50'] / baseline_map * 100:.0f}%)"
+            if baseline_map and baseline_map > 0
+            else ""
+        )
         print(
             f"  {r['name']:<22s}  {r['total_preds']:>6d}  "
             f"{r['precision']:>6.3f}  {r['recall']:>6.3f}  {r['f1']:>6.3f}  "
             f"{r['cls_acc']:>6.3f}  {r['mAP50']:>7.3f}  {r['avg_ms']:>6.0f}ms  {rel}"
         )
 
-    print(f"{'='*W}")
+    print(f"{'=' * W}")
     if results_table:
         print(f"  GT annotations: {results_table[0]['total_gt']}")
 

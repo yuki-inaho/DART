@@ -31,7 +31,7 @@ def convert_ytbvis_to_cocovid_gt(ann_json, save_path=None):
     VIS["categories"] = official_anns["categories"]  # Direct copy categories
 
     # Initialize counters
-    records = dict(img_id=1, ann_id=1)
+    records = {"img_id": 1, "ann_id": 1}
 
     # Create video-to-annotations mapping
     vid_to_anns = defaultdict(list)

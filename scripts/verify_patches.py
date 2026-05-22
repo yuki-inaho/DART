@@ -2,17 +2,22 @@
 """Verify that RoPE + SDPA patches produce same output as original in PyTorch."""
 
 import torch
+
 from sam3.model_builder import build_sam3_image_model
 from sam3.trt.rope_onnx import (
-    patch_rope_for_export, unpatch_rope,
-    patch_sdpa_for_export, unpatch_sdpa,
+    patch_rope_for_export,
+    patch_sdpa_for_export,
+    unpatch_rope,
+    unpatch_sdpa,
 )
 
 device = "cuda"
 
 print("Loading model...")
 model = build_sam3_image_model(
-    device=device, checkpoint_path="sam3.pt", eval_mode=True,
+    device=device,
+    checkpoint_path="sam3.pt",
+    eval_mode=True,
 )
 backbone = model.backbone
 

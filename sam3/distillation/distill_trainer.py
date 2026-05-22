@@ -12,24 +12,22 @@ Supports:
 
 import os
 import time
-from typing import Optional
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributed as dist
+from PIL import Image
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.transforms import v2
 
-from PIL import Image
-
-
 # ---------------------------------------------------------------------------
 # Distributed helpers
 # ---------------------------------------------------------------------------
+
 
 def is_dist_initialized() -> bool:
     return dist.is_available() and dist.is_initialized()
@@ -71,7 +69,9 @@ def _log_vram(label: str = ""):
     total = torch.cuda.get_device_properties(0).total_memory / 1024**3
     prefix = f"  [{label}] " if label else "  "
     if is_main_process():
-        print(f"{prefix}VRAM: {alloc:.1f}GB allocated, {reserved:.1f}GB reserved, {total:.0f}GB total")
+        print(
+            f"{prefix}VRAM: {alloc:.1f}GB allocated, {reserved:.1f}GB reserved, {total:.0f}GB total"
+        )
 
 
 def setup_distributed():
@@ -95,10 +95,12 @@ def setup_distributed():
         # Derive master address from SLURM_NODELIST if not already set
         if "MASTER_ADDR" not in os.environ:
             import subprocess
+
             nodelist = os.environ["SLURM_NODELIST"]
             result = subprocess.run(
                 ["scontrol", "show", "hostnames", nodelist],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             os.environ["MASTER_ADDR"] = result.stdout.strip().split("\n")[0]
         if "MASTER_PORT" not in os.environ:
@@ -128,6 +130,7 @@ def cleanup_distributed():
 # Dataset
 # ---------------------------------------------------------------------------
 
+
 class ImageFolderDataset(Dataset):
     """Simple dataset that loads images from a directory (no labels needed).
 
@@ -143,7 +146,10 @@ class ImageFolderDataset(Dataset):
         self.image_paths = []
 
         for entry in os.scandir(root):
-            if entry.is_file() and os.path.splitext(entry.name)[1].lower() in self.IMAGE_EXTENSIONS:
+            if (
+                entry.is_file()
+                and os.path.splitext(entry.name)[1].lower() in self.IMAGE_EXTENSIONS
+            ):
                 self.image_paths.append(entry.path)
 
         self.image_paths.sort()
@@ -171,6 +177,7 @@ class ImageFolderDataset(Dataset):
 # Loss
 # ---------------------------------------------------------------------------
 
+
 class FeatureDistillationLoss(nn.Module):
     """Weighted multi-scale MSE loss between teacher and student FPN features.
 
@@ -178,7 +185,7 @@ class FeatureDistillationLoss(nn.Module):
     most important for grounding performance.
     """
 
-    def __init__(self, level_weights: Optional[list] = None):
+    def __init__(self, level_weights: list | None = None):
         super().__init__()
         if level_weights is None:
             # 3 levels: level 0 (288x288), level 1 (144x144), level 2 (72x72)
@@ -196,7 +203,7 @@ class FeatureDistillationLoss(nn.Module):
         total_loss = torch.tensor(0.0, device=student_features[0].device)
         per_level_losses = []
 
-        for i, (s_feat, t_feat, w) in enumerate(
+        for _i, (s_feat, t_feat, w) in enumerate(
             zip(student_features, teacher_features, self.level_weights)
         ):
             level_loss = F.mse_loss(s_feat, t_feat)
@@ -212,6 +219,7 @@ class FeatureDistillationLoss(nn.Module):
 # ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
+
 
 class DistillationTrainer:
     """Online feature distillation trainer.
@@ -247,7 +255,7 @@ class DistillationTrainer:
         batch_size: int = 1,
         num_epochs: int = 5,
         resolution: int = 1008,
-        level_weights: Optional[list] = None,
+        level_weights: list | None = None,
         num_workers: int = 4,
         save_every: int = 1,
         log_every: int = 50,
@@ -401,7 +409,7 @@ class DistillationTrainer:
                 eff_imgs = (step + 1) * self.batch_size * self.world_size
                 imgs_per_sec = eff_imgs / elapsed
                 print(
-                    f"  [Epoch {epoch+1}][{step+1}/{len(self.dataloader)}] "
+                    f"  [Epoch {epoch + 1}][{step + 1}/{len(self.dataloader)}] "
                     f"loss={avg:.6f} (L0={per_level[0]:.4f} L1={per_level[1]:.4f} "
                     f"L2={per_level[2]:.4f}) lr={lr:.2e} {imgs_per_sec:.1f} img/s"
                 )
@@ -414,7 +422,7 @@ class DistillationTrainer:
         if not is_main_process():
             return
 
-        path = os.path.join(self.output_dir, f"adapter_epoch{epoch+1}.pt")
+        path = os.path.join(self.output_dir, f"adapter_epoch{epoch + 1}.pt")
         adapter_state = {}
         for name, param in self._student_unwrapped.named_parameters():
             if param.requires_grad:
@@ -453,7 +461,7 @@ class DistillationTrainer:
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
             self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
             self.scaler.load_state_dict(ckpt["scaler_state_dict"])
-            dist_print(f"  Restored optimizer, scheduler, and scaler state")
+            dist_print("  Restored optimizer, scheduler, and scaler state")
         else:
             # Old-style checkpoint without optimizer state — fast-forward scheduler
             steps_per_epoch = len(self.dataloader)
@@ -474,10 +482,10 @@ class DistillationTrainer:
             )
             return
 
-        dist_print(f"\nStarting distillation training...")
+        dist_print("\nStarting distillation training...")
         if start_epoch > 0:
             dist_print(f"Resuming from epoch {start_epoch + 1}")
-        dist_print(f"{'='*60}")
+        dist_print(f"{'=' * 60}")
 
         for epoch in range(start_epoch, self.num_epochs):
             t0 = time.perf_counter()
@@ -485,7 +493,7 @@ class DistillationTrainer:
             elapsed = time.perf_counter() - t0
 
             dist_print(
-                f"Epoch {epoch+1}/{self.num_epochs}: "
+                f"Epoch {epoch + 1}/{self.num_epochs}: "
                 f"avg_loss={avg_loss:.6f} time={elapsed:.1f}s"
             )
 
@@ -496,7 +504,7 @@ class DistillationTrainer:
             if self.distributed:
                 dist.barrier()
 
-        dist_print(f"\n{'='*60}")
+        dist_print(f"\n{'=' * 60}")
         dist_print("Training complete!")
 
         if is_main_process():
@@ -514,6 +522,7 @@ class DistillationTrainer:
 # ---------------------------------------------------------------------------
 # Phase 2: Encoder fine-tuning
 # ---------------------------------------------------------------------------
+
 
 class EncoderFineTuner(DistillationTrainer):
     """Phase 2: fine-tune the encoder to adapt to student features.
@@ -561,9 +570,7 @@ class EncoderFineTuner(DistillationTrainer):
             param.requires_grad = True
 
         # Adapter params should already be trainable
-        trainable_params = [
-            p for p in self.full_model.parameters() if p.requires_grad
-        ]
+        trainable_params = [p for p in self.full_model.parameters() if p.requires_grad]
 
         self.optimizer = torch.optim.AdamW(trainable_params, lr=lr, weight_decay=0.01)
 

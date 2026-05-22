@@ -7,14 +7,13 @@
 import dataclasses
 import logging
 from collections import defaultdict
-from typing import Dict, List, Optional
 
-import numpy as np
 import torch
+from torch import nn
+
 from sam3.model import box_ops
 from sam3.model.data_misc import BatchedInferenceMetadata, interpolate
 from sam3.train.masks_ops import rle_encode, robust_rle_encode
-from torch import nn
 
 
 class PostProcessNullOp(nn.Module):
@@ -95,7 +94,7 @@ class PostProcessImage(nn.Module):
                 )
                 ret_tensordict = False
 
-        out_bbox = outputs["pred_boxes"] if "pred_boxes" in outputs else None
+        out_bbox = outputs.get("pred_boxes", None)
         out_logits = outputs["pred_logits"]
         pred_masks = outputs["pred_masks"] if self.iou_type == "segm" else None
         out_probs = out_logits.sigmoid()
@@ -194,7 +193,7 @@ class PostProcessImage(nn.Module):
                         ).sigmoid()
                         > 0.5
                     )
-                except Exception as e:
+                except Exception:
                     logging.info("Issue found, reverting to CPU mode!")
                     mask_device = mask.device
                     mask = mask.cpu()
@@ -255,7 +254,7 @@ class PostProcessImage(nn.Module):
         return boxes, scores, labels, keep
 
     def process_results(
-        self, find_stages, find_metadatas: List[BatchedInferenceMetadata], **kwargs
+        self, find_stages, find_metadatas: list[BatchedInferenceMetadata], **kwargs
     ):
         if find_stages.loss_stages is not None:
             find_metadatas = [find_metadatas[i] for i in find_stages.loss_stages]
@@ -289,7 +288,7 @@ class PostProcessImage(nn.Module):
                     results[img_id.item()] = result
                 else:
                     assert set(results[img_id.item()].keys()) == set(result.keys())
-                    for k in result.keys():
+                    for k in result:
                         if isinstance(result[k], torch.Tensor):
                             results[img_id.item()][k] = torch.cat(
                                 [results[img_id.item()][k], result[k]], dim=0
@@ -311,7 +310,7 @@ class PostProcessImage(nn.Module):
                 )
                 if self.to_cpu:
                     topk_indexes = topk_indexes.cpu()
-                for k in result.keys():
+                for k in result:
                     if isinstance(results[img_id][k], list):
                         results[img_id][k] = [
                             results[img_id][k][i] for i in topk_indexes.tolist()
@@ -362,7 +361,7 @@ class PostProcessAPIVideo(PostProcessImage):
         self.prob_thresh = prob_thresh
 
     def process_results(
-        self, find_stages, find_metadatas: List[BatchedInferenceMetadata], **kwargs
+        self, find_stages, find_metadatas: list[BatchedInferenceMetadata], **kwargs
     ):
         """
         Tracking Postprocessor for SAM 3 video model.
@@ -401,8 +400,8 @@ class PostProcessAPIVideo(PostProcessImage):
         tracked_objects_frame_idx = defaultdict(list)
         total_num_preds = 0
         # This will hold the packed representation of predictions.
-        vid_preds_packed: List[TensorDict] = []
-        vid_masklets_rle_packed: List[Optional[Dict]] = []
+        vid_preds_packed: list[TensorDict] = []
+        vid_masklets_rle_packed: list[dict | None] = []
         video_id = -1  # We assume single video postprocessing, this ID should be unique in the datapoint.
 
         for frame_idx, (frame_outs, meta) in enumerate(
@@ -566,10 +565,10 @@ class PostProcessTracking(PostProcessImage):
         results = {}
         for outputs, meta in zip(find_stages, find_metadatas):
             if self.force_single_mask:
-                scores, labels = outputs["pred_logits"].max(-1)
+                scores, _labels = outputs["pred_logits"].max(-1)
                 m = []
                 for i in range(len(outputs["pred_masks"])):
-                    score, idx = scores[i].max(0)
+                    _score, idx = scores[i].max(0)
                     m.append(outputs["pred_masks"][i][idx])
                 outputs["pred_masks"] = torch.stack(m, 0).unsqueeze(1)
             detection_results = self(outputs, meta.original_size, consistent=False)
@@ -633,7 +632,7 @@ class PostProcessCounting(nn.Module):
 
     @torch.no_grad()
     def process_results(
-        self, find_stages, find_metadatas: List[BatchedInferenceMetadata], **kwargs
+        self, find_stages, find_metadatas: list[BatchedInferenceMetadata], **kwargs
     ):
         assert len(find_stages) == len(find_metadatas)
         results = {}

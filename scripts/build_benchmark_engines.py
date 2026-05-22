@@ -17,9 +17,9 @@ PYTHON = sys.executable
 
 
 def run(cmd, desc):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {desc}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     t0 = time.perf_counter()
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -38,11 +38,23 @@ def main():
         if os.path.exists(engine):
             print(f"  Skipping {engine} (already exists)")
             continue
-        run([
-            PYTHON, "-m", "sam3.trt.build_engine",
-            "--onnx", onnx, "--output", engine,
-            "--fp16", "--mixed-precision", "none", "--opt-level", "5",
-        ], f"Enc-dec c{nc} presence FP16 opt5")
+        run(
+            [
+                PYTHON,
+                "-m",
+                "sam3.trt.build_engine",
+                "--onnx",
+                onnx,
+                "--output",
+                engine,
+                "--fp16",
+                "--mixed-precision",
+                "none",
+                "--opt-level",
+                "5",
+            ],
+            f"Enc-dec c{nc} presence FP16 opt5",
+        )
 
     # 2. Full ViT-H backbone
     # Re-export + build via HF path
@@ -50,11 +62,23 @@ def main():
     if not os.path.exists(hf_engine):
         hf_onnx = "onnx_hf_backbone_1008/hf_backbone.onnx"
         if os.path.exists(hf_onnx):
-            run([
-                PYTHON, "-m", "sam3.trt.build_engine",
-                "--onnx", hf_onnx, "--output", hf_engine,
-                "--fp16", "--mixed-precision", "none", "--opt-level", "5",
-            ], "Full ViT-H backbone FP16 opt5")
+            run(
+                [
+                    PYTHON,
+                    "-m",
+                    "sam3.trt.build_engine",
+                    "--onnx",
+                    hf_onnx,
+                    "--output",
+                    hf_engine,
+                    "--fp16",
+                    "--mixed-precision",
+                    "none",
+                    "--opt-level",
+                    "5",
+                ],
+                "Full ViT-H backbone FP16 opt5",
+            )
         else:
             print(f"  WARNING: {hf_onnx} not found, skipping full backbone")
     else:
@@ -69,22 +93,50 @@ def main():
             # Try the other path
             pruned_onnx = "pruned_backbone_1008.onnx"
         if os.path.exists(pruned_onnx):
-            run([
-                PYTHON, "-m", "sam3.trt.build_engine",
-                "--onnx", pruned_onnx, "--output", pruned_engine,
-                "--fp16", "--mixed-precision", "none", "--opt-level", "5",
-            ], "Pruned-16 backbone FP16 opt5")
+            run(
+                [
+                    PYTHON,
+                    "-m",
+                    "sam3.trt.build_engine",
+                    "--onnx",
+                    pruned_onnx,
+                    "--output",
+                    pruned_engine,
+                    "--fp16",
+                    "--mixed-precision",
+                    "none",
+                    "--opt-level",
+                    "5",
+                ],
+                "Pruned-16 backbone FP16 opt5",
+            )
         else:
-            print(f"  WARNING: No pruned ONNX found, skipping")
+            print("  WARNING: No pruned ONNX found, skipping")
     else:
         print(f"  Skipping {pruned_engine} (already exists)")
 
     # 4. Student backbones
     students = [
-        ("student_efficientvit_l1_fixed.onnx", "student_efficientvit_l1_fp16_opt5.engine", "EfficientViT-L1"),
-        ("student_efficientvit_l2.onnx", "student_efficientvit_l2_fp16_opt5.engine", "EfficientViT-L2"),
-        ("student_tiny_vit_21m.onnx", "student_tiny_vit_21m_fp16_opt5.engine", "TinyViT-21M"),
-        ("student_repvit_m2_3.onnx", "student_repvit_m2_3_fp16_opt5.engine", "RepViT-M2.3"),
+        (
+            "student_efficientvit_l1_fixed.onnx",
+            "student_efficientvit_l1_fp16_opt5.engine",
+            "EfficientViT-L1",
+        ),
+        (
+            "student_efficientvit_l2.onnx",
+            "student_efficientvit_l2_fp16_opt5.engine",
+            "EfficientViT-L2",
+        ),
+        (
+            "student_tiny_vit_21m.onnx",
+            "student_tiny_vit_21m_fp16_opt5.engine",
+            "TinyViT-21M",
+        ),
+        (
+            "student_repvit_m2_3.onnx",
+            "student_repvit_m2_3_fp16_opt5.engine",
+            "RepViT-M2.3",
+        ),
     ]
     for onnx, engine, name in students:
         if os.path.exists(engine):
@@ -93,15 +145,27 @@ def main():
         if not os.path.exists(onnx):
             print(f"  WARNING: {onnx} not found, skipping {name}")
             continue
-        run([
-            PYTHON, "-m", "sam3.trt.build_engine",
-            "--onnx", onnx, "--output", engine,
-            "--fp16", "--mixed-precision", "none", "--opt-level", "5",
-        ], f"{name} backbone FP16 opt5")
+        run(
+            [
+                PYTHON,
+                "-m",
+                "sam3.trt.build_engine",
+                "--onnx",
+                onnx,
+                "--output",
+                engine,
+                "--fp16",
+                "--mixed-precision",
+                "none",
+                "--opt-level",
+                "5",
+            ],
+            f"{name} backbone FP16 opt5",
+        )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  ALL ENGINE BUILDS COMPLETE")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

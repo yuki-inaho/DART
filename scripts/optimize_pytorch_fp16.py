@@ -4,10 +4,10 @@
 Tests: baseline, cudnn.benchmark, channels_last, torch.compile, CUDA graphs.
 """
 
-import gc
 import time
+
 import torch
-import torch.nn.functional as F
+
 from sam3.model_builder import build_sam3_image_model
 
 device = "cuda"
@@ -51,7 +51,7 @@ def benchmark_cuda_graph(fn, dummy, label, n_warmup=N_WARMUP, n_iters=N_ITERS):
     graph = torch.cuda.CUDAGraph()
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
         with torch.cuda.graph(graph):
-            out = fn(static_input)
+            fn(static_input)
     torch.cuda.synchronize()
 
     # Warmup replay
@@ -81,7 +81,9 @@ def main():
     # =============================================
     print("Loading model...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path="sam3.pt", eval_mode=True,
+        device=device,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     backbone = model.backbone
 
@@ -103,12 +105,12 @@ def main():
     # Convert conv-heavy parts to channels_last
     # PatchEmbed conv and FPN neck convs
     trunk = backbone.vision_backbone.trunk
-    if hasattr(trunk, 'patch_embed'):
+    if hasattr(trunk, "patch_embed"):
         trunk.patch_embed = trunk.patch_embed.to(memory_format=torch.channels_last)
 
     neck = backbone.vision_backbone
     # Convert the whole neck module to channels_last
-    for name, module in neck.named_modules():
+    for _name, module in neck.named_modules():
         if isinstance(module, (torch.nn.Conv2d, torch.nn.ConvTranspose2d)):
             module.to(memory_format=torch.channels_last)
 
@@ -134,7 +136,7 @@ def main():
                 t0 = time.perf_counter()
                 compiled_fn(dummy)
                 torch.cuda.synchronize()
-                print(f"    Warmup {i}: {(time.perf_counter()-t0)*1000:.0f}ms")
+                print(f"    Warmup {i}: {(time.perf_counter() - t0) * 1000:.0f}ms")
         benchmark_fn(compiled_fn, dummy, "compile(reduce-overhead)")
     except Exception as e:
         print(f"  FAILED: {e}")
@@ -155,7 +157,7 @@ def main():
                 t0 = time.perf_counter()
                 compiled_fn2(dummy)
                 torch.cuda.synchronize()
-                print(f"    Warmup {i}: {(time.perf_counter()-t0)*1000:.0f}ms")
+                print(f"    Warmup {i}: {(time.perf_counter() - t0) * 1000:.0f}ms")
         benchmark_fn(compiled_fn2, dummy, "compile(max-autotune)")
     except Exception as e:
         print(f"  FAILED: {e}")
@@ -169,6 +171,7 @@ def main():
     except Exception as e:
         print(f"  FAILED: {e}")
         import traceback
+
         traceback.print_exc()
 
     # =============================================
@@ -178,8 +181,13 @@ def main():
     # reduce-overhead mode already uses CUDA graphs internally
     # Just re-benchmark the compiled version after full warmup
     try:
-        benchmark_fn(compiled_fn, dummy, "compile(reduce-overhead) post-warmup",
-                     n_warmup=20, n_iters=200)
+        benchmark_fn(
+            compiled_fn,
+            dummy,
+            "compile(reduce-overhead) post-warmup",
+            n_warmup=20,
+            n_iters=200,
+        )
     except Exception as e:
         print(f"  FAILED: {e}")
 

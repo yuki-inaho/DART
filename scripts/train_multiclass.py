@@ -36,9 +36,7 @@ Usage:
 """
 
 import argparse
-import math
 import os
-import sys
 import time
 
 import torch
@@ -46,12 +44,11 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
+from PIL import Image
+from scipy.optimize import linear_sum_assignment
 from torch.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
-
-from PIL import Image
-from scipy.optimize import linear_sum_assignment
 from torchvision.transforms import v2
 
 from sam3.model.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
@@ -63,24 +60,90 @@ from sam3.model.multiclass_head import (
 )
 from sam3.model_builder import build_sam3_image_model
 
-
 # ---------------------------------------------------------------------------
 # COCO 80 class names (canonical order matching pycocotools category IDs)
 # ---------------------------------------------------------------------------
 COCO_CLASSES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
-    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-    "baseball bat", "baseball glove", "skateboard", "surfboard",
-    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon",
-    "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
-    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
-    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
-    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-    "hair drier", "toothbrush",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 
@@ -103,9 +166,7 @@ class COCOMultiClassDataset(Dataset):
         from pycocotools.coco import COCO
 
         self.img_dir = os.path.join(coco_root, split)
-        ann_file = os.path.join(
-            coco_root, "annotations", f"instances_{split}.json"
-        )
+        ann_file = os.path.join(coco_root, "annotations", f"instances_{split}.json")
         if not os.path.exists(ann_file):
             raise FileNotFoundError(f"Annotation file not found: {ann_file}")
 
@@ -119,8 +180,10 @@ class COCOMultiClassDataset(Dataset):
             ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=False)
             if ann_ids:
                 self.img_ids.append(img_id)
-        print(f"  {len(self.img_ids)} images with annotations "
-              f"(of {len(all_img_ids)} total)")
+        print(
+            f"  {len(self.img_ids)} images with annotations "
+            f"(of {len(all_img_ids)} total)"
+        )
 
         # Build category mapping: COCO category IDs (1-90 with gaps) -> 0-79
         cat_ids = sorted(self.coco.getCatIds())
@@ -129,12 +192,14 @@ class COCOMultiClassDataset(Dataset):
         self.class_names = [c["name"] for c in cats]
         self.num_classes = len(cat_ids)
 
-        self.transform = v2.Compose([
-            v2.ToDtype(torch.uint8, scale=True),
-            v2.Resize(size=(resolution, resolution)),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ])
+        self.transform = v2.Compose(
+            [
+                v2.ToDtype(torch.uint8, scale=True),
+                v2.Resize(size=(resolution, resolution)),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]
+        )
 
     def __len__(self):
         return len(self.img_ids)
@@ -203,6 +268,7 @@ def collate_fn(batch):
 # Loss functions
 # ---------------------------------------------------------------------------
 
+
 def sigmoid_focal_loss(logits, targets, alpha=0.25, gamma=2.0):
     """Sigmoid focal loss for multi-label classification.
 
@@ -250,6 +316,7 @@ def box_regression_loss(pred_boxes, gt_boxes):
 # Hungarian matching
 # ---------------------------------------------------------------------------
 
+
 @torch.no_grad()
 def hungarian_match(cls_logits, pred_boxes, gt_boxes, gt_labels):
     """Compute optimal bipartite matching between queries and GT objects.
@@ -264,7 +331,7 @@ def hungarian_match(cls_logits, pred_boxes, gt_boxes, gt_labels):
         pred_indices: (K,) matched query indices.
         gt_indices: (K,) matched GT indices.
     """
-    Q = cls_logits.shape[0]
+    cls_logits.shape[0]
     M = gt_boxes.shape[0]
 
     if M == 0:
@@ -277,11 +344,15 @@ def hungarian_match(cls_logits, pred_boxes, gt_boxes, gt_labels):
     alpha, gamma = 0.25, 2.0
     out_prob = cls_logits.sigmoid()  # (Q, N)
     # Cost: lower when predicted prob for GT class is higher
-    pos_cost = alpha * ((1 - out_prob[:, gt_labels]) ** gamma) * (
-        -(out_prob[:, gt_labels] + 1e-8).log()
+    pos_cost = (
+        alpha
+        * ((1 - out_prob[:, gt_labels]) ** gamma)
+        * (-(out_prob[:, gt_labels] + 1e-8).log())
     )
-    neg_cost = (1 - alpha) * (out_prob[:, gt_labels] ** gamma) * (
-        -(1 - out_prob[:, gt_labels] + 1e-8).log()
+    neg_cost = (
+        (1 - alpha)
+        * (out_prob[:, gt_labels] ** gamma)
+        * (-(1 - out_prob[:, gt_labels] + 1e-8).log())
     )
     cls_cost = pos_cost - neg_cost  # (Q, M)
 
@@ -309,6 +380,7 @@ def hungarian_match(cls_logits, pred_boxes, gt_boxes, gt_labels):
 # ---------------------------------------------------------------------------
 # Training forward module (DDP-compatible)
 # ---------------------------------------------------------------------------
+
 
 class MultiClassForward(nn.Module):
     """Forward pass through decoder + multi-class scoring.
@@ -393,6 +465,7 @@ class MultiClassForward(nn.Module):
 # ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
+
 
 class MultiClassTrainer:
     """Orchestrates multi-class single-pass training."""
@@ -516,8 +589,10 @@ class MultiClassTrainer:
 
         if self.rank == 0:
             total_seq = concat_text.shape[0]
-            print(f"  Concat text: {total_seq} tokens, "
-                  f"class embeddings: {self.class_embeddings.shape}")
+            print(
+                f"  Concat text: {total_seq} tokens, "
+                f"class embeddings: {self.class_embeddings.shape}"
+            )
 
     def _warmup_lr(self, step):
         """Linear warmup for learning rate."""
@@ -554,7 +629,7 @@ class MultiClassTrainer:
         for b in range(B):
             gt_boxes = gt_boxes_list[b].to(self.device)
             gt_labels = gt_labels_list[b].to(self.device)
-            M = gt_boxes.shape[0]
+            gt_boxes.shape[0]
 
             # Hungarian matching
             pred_idx, gt_idx = hungarian_match(
@@ -567,8 +642,10 @@ class MultiClassTrainer:
             if len(pred_idx) > 0:
                 cls_target[pred_idx, gt_labels[gt_idx]] = 1.0
             total_cls += sigmoid_focal_loss(
-                cls_last[b], cls_target,
-                alpha=self.focal_alpha, gamma=self.focal_gamma,
+                cls_last[b],
+                cls_target,
+                alpha=self.focal_alpha,
+                gamma=self.focal_gamma,
             )
 
             # Box losses: only matched queries
@@ -628,8 +705,8 @@ class MultiClassTrainer:
             with torch.no_grad():
                 backbone_out = self.model.backbone.forward_image(images)
                 img_ids = torch.arange(B, device=self.device, dtype=torch.long)
-                backbone_out, img_feats, img_pos, vis_sizes = (
-                    self.model._get_img_feats(backbone_out, img_ids)
+                backbone_out, img_feats, img_pos, vis_sizes = self.model._get_img_feats(
+                    backbone_out, img_ids
                 )
 
                 # Expand cached text embeddings to batch size
@@ -663,16 +740,22 @@ class MultiClassTrainer:
             # --- Decoder + scoring (trainable, with grad) ---
             with autocast("cuda", dtype=torch.float16):
                 cls_logits, pred_boxes = self.forward_module(
-                    enc_memory, enc_pad, enc_pos,
-                    dec_text, dec_mask, self.class_embeddings,
+                    enc_memory,
+                    enc_pad,
+                    enc_pos,
+                    dec_text,
+                    dec_mask,
+                    self.class_embeddings,
                     encoder_out["level_start_index"],
                     encoder_out["spatial_shapes"],
                     valid_ratios,
                 )
 
                 loss_dict = self._compute_loss(
-                    cls_logits.float(), pred_boxes.float(),
-                    gt_boxes_list, gt_labels_list,
+                    cls_logits.float(),
+                    pred_boxes.float(),
+                    gt_boxes_list,
+                    gt_labels_list,
                 )
 
             # --- Backward ---
@@ -718,11 +801,17 @@ class MultiClassTrainer:
 
         # Save only the trainable decoder weights (ca_text, catext_norm, bbox_embed)
         trainable_decoder_keys = [
-            "ca_text", "catext_norm", "catext_dropout", "bbox_embed",
-            "linear1", "linear2", "norm3",  # FFN (if trained)
+            "ca_text",
+            "catext_norm",
+            "catext_dropout",
+            "bbox_embed",
+            "linear1",
+            "linear2",
+            "norm3",  # FFN (if trained)
         ]
         decoder_state = {
-            k: v for k, v in fwd.decoder.state_dict().items()
+            k: v
+            for k, v in fwd.decoder.state_dict().items()
             if any(t in k for t in trainable_decoder_keys)
         }
 
@@ -770,6 +859,7 @@ class MultiClassTrainer:
 # Worker (multi-GPU entry point)
 # ---------------------------------------------------------------------------
 
+
 def worker(rank, world_size, args):
     """DDP worker function."""
     # Setup DDP (skip if already initialized by torchrun)
@@ -782,7 +872,7 @@ def worker(rank, world_size, args):
 
     if rank == 0:
         print(f"\n{'=' * 60}")
-        print(f"Multi-class single-pass training")
+        print("Multi-class single-pass training")
         print(f"GPUs: {world_size}, batch/GPU: {args.batch_size}")
         print(f"Effective batch size: {world_size * args.batch_size}")
         print(f"{'=' * 60}\n")
@@ -822,9 +912,7 @@ def worker(rank, world_size, args):
     trainer.precompute_text(COCO_CLASSES)
 
     # Dataset + dataloader
-    dataset = COCOMultiClassDataset(
-        args.coco_dir, split=args.split, resolution=1008
-    )
+    dataset = COCOMultiClassDataset(args.coco_dir, split=args.split, resolution=1008)
     sampler = DistributedSampler(
         dataset, num_replicas=world_size, rank=rank, shuffle=True
     )
@@ -839,8 +927,7 @@ def worker(rank, world_size, args):
     )
 
     if rank == 0:
-        print(f"\nDataset: {len(dataset)} images, "
-              f"{len(dataloader)} batches/epoch")
+        print(f"\nDataset: {len(dataset)} images, {len(dataloader)} batches/epoch")
         print(f"Training for {args.epochs} epochs\n")
 
     # Resume or start fresh
@@ -874,9 +961,7 @@ def worker(rank, world_size, args):
 
         # Save checkpoint
         if rank == 0 and (epoch % args.save_every == 0 or epoch == args.epochs):
-            ckpt_path = os.path.join(
-                args.output_dir, f"multiclass_ep{epoch:03d}.pt"
-            )
+            ckpt_path = os.path.join(args.output_dir, f"multiclass_ep{epoch:03d}.pt")
             trainer.save_checkpoint(ckpt_path, epoch, COCO_CLASSES, global_step)
 
     if world_size > 1:
@@ -888,7 +973,7 @@ def worker_single(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print(f"\n{'=' * 60}")
-    print(f"Multi-class single-pass training (single GPU)")
+    print("Multi-class single-pass training (single GPU)")
     print(f"Batch size: {args.batch_size}")
     print(f"{'=' * 60}\n")
 
@@ -926,9 +1011,7 @@ def worker_single(args):
     trainer.precompute_text(COCO_CLASSES)
 
     # Dataset + dataloader
-    dataset = COCOMultiClassDataset(
-        args.coco_dir, split=args.split, resolution=1008
-    )
+    dataset = COCOMultiClassDataset(args.coco_dir, split=args.split, resolution=1008)
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -939,8 +1022,7 @@ def worker_single(args):
         drop_last=True,
     )
 
-    print(f"\nDataset: {len(dataset)} images, "
-          f"{len(dataloader)} batches/epoch")
+    print(f"\nDataset: {len(dataset)} images, {len(dataloader)} batches/epoch")
     print(f"Training for {args.epochs} epochs\n")
 
     # Resume or start fresh
@@ -969,15 +1051,14 @@ def worker_single(args):
         )
 
         if epoch % args.save_every == 0 or epoch == args.epochs:
-            ckpt_path = os.path.join(
-                args.output_dir, f"multiclass_ep{epoch:03d}.pt"
-            )
+            ckpt_path = os.path.join(args.output_dir, f"multiclass_ep{epoch:03d}.pt")
             trainer.save_checkpoint(ckpt_path, epoch, COCO_CLASSES, global_step)
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -986,26 +1067,33 @@ def main():
 
     # Data
     parser.add_argument(
-        "--coco-dir", type=str, required=True,
+        "--coco-dir",
+        type=str,
+        required=True,
         help="COCO dataset root (contains train2017/, annotations/)",
     )
     parser.add_argument(
-        "--split", type=str, default="train2017",
+        "--split",
+        type=str,
+        default="train2017",
         help="Dataset split (default: train2017)",
     )
     parser.add_argument(
-        "--checkpoint", type=str, default=None,
+        "--checkpoint",
+        type=str,
+        default=None,
         help="SAM3 checkpoint path (downloads from HF if not provided)",
     )
     parser.add_argument(
-        "--output-dir", type=str, default="./checkpoints/multiclass",
+        "--output-dir",
+        type=str,
+        default="./checkpoints/multiclass",
         help="Output directory for checkpoints",
     )
 
     # Training
     parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--batch-size", type=int, default=4,
-                        help="Per-GPU batch size")
+    parser.add_argument("--batch-size", type=int, default=4, help="Per-GPU batch size")
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=0.05)
     parser.add_argument("--warmup-steps", type=int, default=500)
@@ -1018,19 +1106,28 @@ def main():
 
     # Architecture
     parser.add_argument(
-        "--train-decoder-ffn", action="store_true",
+        "--train-decoder-ffn",
+        action="store_true",
         help="Also fine-tune decoder FFN layers (more params, slower)",
     )
 
     # Infrastructure
-    parser.add_argument("--num-gpus", type=int, default=0,
-                        help="Number of GPUs (0 = single GPU, no DDP)")
+    parser.add_argument(
+        "--num-gpus",
+        type=int,
+        default=0,
+        help="Number of GPUs (0 = single GPU, no DDP)",
+    )
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--save-every", type=int, default=5)
     parser.add_argument("--master-port", type=int, default=29500)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--resume", type=str, default=None,
-                        help="Path to checkpoint to resume training from")
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from",
+    )
 
     args = parser.parse_args()
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Compare ONNX graph structures between SDPA and eager backbone exports."""
 
-import onnx
 from collections import Counter
+
+import onnx
 
 for name in ["backbone.onnx", "backbone_eager2.onnx"]:
     model = onnx.load(name)
@@ -24,4 +25,4 @@ print("Differences:")
 for op in sorted(all_ops):
     c1, c2 = ops1.get(op, 0), ops2.get(op, 0)
     if c1 != c2:
-        print(f"  {op}: {c1} -> {c2} ({c2-c1:+d})")
+        print(f"  {op}: {c1} -> {c2} ({c2 - c1:+d})")

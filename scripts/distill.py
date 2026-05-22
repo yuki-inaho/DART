@@ -124,19 +124,20 @@ def apply_mask_blocks(model, mask_blocks):
             block.mask_mlp = True
     masked_attn = sum(1 for _, t in mask_blocks if t == "attn")
     masked_mlp = sum(1 for _, t in mask_blocks if t == "mlp")
-    print(f"  Masked {len(mask_blocks)} sub-blocks: {masked_attn} attn, {masked_mlp} mlp")
+    print(
+        f"  Masked {len(mask_blocks)} sub-blocks: {masked_attn} attn, {masked_mlp} mlp"
+    )
 
 
 def run_phase1(args):
     """Phase 1: Adapter-only distillation."""
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.distillation.student_backbone import build_student_backbone
     from sam3.distillation.distill_trainer import (
         DistillationTrainer,
         dist_print,
-        is_main_process,
         setup_distributed,
     )
+    from sam3.distillation.student_backbone import build_student_backbone
+    from sam3.model_builder import build_sam3_image_model
 
     setup_distributed()
 
@@ -199,7 +200,7 @@ def run_phase1(args):
     del teacher.geometry_encoder
     del teacher.backbone.language_backbone
     torch.cuda.empty_cache()
-    dist_print(f"\nFreed non-backbone teacher components to save VRAM")
+    dist_print("\nFreed non-backbone teacher components to save VRAM")
 
     if args.resume:
         trainer.resume_from_checkpoint(args.resume)
@@ -209,13 +210,13 @@ def run_phase1(args):
 
 def run_phase2(args):
     """Phase 2: Fine-tune student backbone (full or LoRA) + FPN adapter."""
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.distillation.student_backbone import build_student_backbone
     from sam3.distillation.distill_trainer import (
         DistillationTrainer,
         dist_print,
         setup_distributed,
     )
+    from sam3.distillation.student_backbone import build_student_backbone
+    from sam3.model_builder import build_sam3_image_model
 
     setup_distributed()
 
@@ -256,6 +257,7 @@ def run_phase2(args):
     # Apply LoRA to the timm backbone (not the FPN adapters)
     if use_lora:
         from sam3.distillation.lora import apply_lora, lora_param_count
+
         n_wrapped = apply_lora(
             student_bb.backbone, rank=args.lora_rank, alpha=args.lora_rank
         )
@@ -305,7 +307,7 @@ def run_phase2(args):
     del teacher.geometry_encoder
     del teacher.backbone.language_backbone
     torch.cuda.empty_cache()
-    dist_print(f"\nFreed non-backbone teacher components to save VRAM")
+    dist_print("\nFreed non-backbone teacher components to save VRAM")
 
     if args.resume:
         trainer.resume_from_checkpoint(args.resume)
@@ -321,12 +323,12 @@ def run_prune(args):
     remaining layers to recover quality. Saves a pruned checkpoint
     with removed block weights stripped.
     """
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.distillation.prune_trainer import PruneDistillTrainer
     from sam3.distillation.distill_trainer import (
         dist_print,
         setup_distributed,
     )
+    from sam3.distillation.prune_trainer import PruneDistillTrainer
+    from sam3.model_builder import build_sam3_image_model
 
     mask_blocks = parse_mask_blocks(args.mask_blocks)
     skip_blocks = []
@@ -401,9 +403,10 @@ def run_prune(args):
 
 def run_test(args):
     """Test student model with a single image + text prompt (single GPU only)."""
+    from PIL import Image
+
     from sam3.distillation.sam3_student import build_sam3_student_model
     from sam3.model.sam3_image_processor import Sam3Processor
-    from PIL import Image
 
     print("=" * 60)
     print("Testing Student Model")
@@ -423,9 +426,7 @@ def run_test(args):
     if args.adapter_checkpoint:
         print(f"Loading adapter weights from {args.adapter_checkpoint}")
         ckpt = torch.load(args.adapter_checkpoint, map_location=args.device)
-        model.backbone.student_backbone.load_state_dict(
-            ckpt["student_state_dict"]
-        )
+        model.backbone.student_backbone.load_state_dict(ckpt["student_state_dict"])
 
     model.eval()
 
@@ -447,9 +448,9 @@ def run_test(args):
 
     num_dets = len(state["scores"])
     print(f"\nResults: {num_dets} detections")
-    print(f"  Backbone: {t_backbone*1000:.1f}ms")
-    print(f"  Head: {t_head*1000:.1f}ms")
-    print(f"  Total: {(t_backbone+t_head)*1000:.1f}ms")
+    print(f"  Backbone: {t_backbone * 1000:.1f}ms")
+    print(f"  Head: {t_head * 1000:.1f}ms")
+    print(f"  Total: {(t_backbone + t_head) * 1000:.1f}ms")
 
     for i in range(min(num_dets, 10)):
         score = state["scores"][i].item()
@@ -464,25 +465,43 @@ def main():
     parser = argparse.ArgumentParser(description="SAM3 backbone distillation")
 
     parser.add_argument(
-        "--phase", type=str, default="1", choices=["1", "2", "prune"],
-        help="Training phase: 1=adapter-only, 2=encoder fine-tuning, prune=self-distill pruned backbone"
+        "--phase",
+        type=str,
+        default="1",
+        choices=["1", "2", "prune"],
+        help="Training phase: 1=adapter-only, 2=encoder fine-tuning, prune=self-distill pruned backbone",
     )
     parser.add_argument(
-        "--data-dir", type=str, default=None,
-        help="Path to image directory (e.g., COCO train2017)"
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Path to image directory (e.g., COCO train2017)",
     )
     parser.add_argument(
-        "--checkpoint", type=str, default=None,
-        help="Path to teacher SAM3 checkpoint (default: download from HF)"
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to teacher SAM3 checkpoint (default: download from HF)",
     )
     parser.add_argument(
-        "--adapter-checkpoint", type=str, default=None,
-        help="Path to adapter checkpoint (for phase 2 or testing)"
+        "--adapter-checkpoint",
+        type=str,
+        default=None,
+        help="Path to adapter checkpoint (for phase 2 or testing)",
     )
     parser.add_argument(
-        "--backbone", type=str, default="efficientvit_l1",
-        choices=["efficientvit_l1", "efficientvit_l2", "repvit_m2_3", "tiny_vit_21m", "vit_base", "vit_base_dinov3"],
-        help="Student backbone architecture (phases 1/2 only)"
+        "--backbone",
+        type=str,
+        default="efficientvit_l1",
+        choices=[
+            "efficientvit_l1",
+            "efficientvit_l2",
+            "repvit_m2_3",
+            "tiny_vit_21m",
+            "vit_base",
+            "vit_base_dinov3",
+        ],
+        help="Student backbone architecture (phases 1/2 only)",
     )
     parser.add_argument("--output-dir", type=str, default="distill_checkpoints")
     parser.add_argument("--epochs", type=int, default=5)
@@ -492,13 +511,14 @@ def main():
     parser.add_argument("--save-every", type=int, default=1)
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument(
-        "--device", type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu"
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
 
     # Sub-block pruning
     parser.add_argument(
-        "--mask-blocks", type=str, default=None,
+        "--mask-blocks",
+        type=str,
+        default=None,
         help=(
             "Sub-blocks to mask, e.g. '25:attn,28:mlp,27:attn'. "
             "In phases 1/2: masks teacher backbone before distilling to student. "
@@ -508,7 +528,9 @@ def main():
 
     # Full block removal
     parser.add_argument(
-        "--skip-blocks", type=str, default=None,
+        "--skip-blocks",
+        type=str,
+        default=None,
         help=(
             "Entire blocks to remove, e.g. '25,28,27'. "
             "In prune mode: defines which full blocks to skip and self-distill."
@@ -517,14 +539,18 @@ def main():
 
     # LoRA (phase 2 only)
     parser.add_argument(
-        "--lora-rank", type=int, default=0,
-        help="LoRA rank for phase 2 backbone fine-tuning (0=full fine-tune)"
+        "--lora-rank",
+        type=int,
+        default=0,
+        help="LoRA rank for phase 2 backbone fine-tuning (0=full fine-tune)",
     )
 
     # Resume from checkpoint
     parser.add_argument(
-        "--resume", type=str, default=None,
-        help="Path to checkpoint to resume training from (e.g., distill_checkpoints/adapter_epoch50.pt)"
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from (e.g., distill_checkpoints/adapter_epoch50.pt)",
     )
 
     # Test mode

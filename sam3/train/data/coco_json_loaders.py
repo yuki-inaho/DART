@@ -9,7 +9,6 @@ from typing import Dict, List, Tuple
 import torch
 from pycocotools import mask as mask_util
 
-
 # ============================================================================
 # Utility Functions
 # ============================================================================
@@ -432,7 +431,7 @@ class SAM3_VEVAL_API_FROM_JSON_NP:
         for np_id in all_np_ids:
             text_input = self._cat_id_to_np[np_id]
 
-            for i, image_path in enumerate(cur_vid_data["file_names"]):
+            for i, _image_path in enumerate(cur_vid_data["file_names"]):
                 query = query_template.copy()
                 query["id"] = len(queries)
                 query["original_cat_id"] = np_id

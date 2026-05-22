@@ -24,8 +24,8 @@ from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+from sam3.model_builder import build_sam3_image_model
 
 VIDEO = "traffic4.mov"
 WARMUP_FRAMES = 10
@@ -36,26 +36,102 @@ NMS = 0.7
 CSV_FILE = "benchmark_fps_results.csv"
 
 COCO_80 = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
-    "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
-    "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
-    "sports ball", "kite", "baseball bat", "baseball glove", "skateboard",
-    "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
-    "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
-    "couch", "potted plant", "bed", "dining table", "toilet", "tv",
-    "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave",
-    "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
-    "scissors", "teddy bear", "hair drier", "toothbrush",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 CLASS_CONFIGS = {
-    1:  ["person"],
-    2:  ["person", "car"],
-    4:  ["person", "car", "bicycle", "dog"],
-    8:  ["person", "car", "bicycle", "dog", "bus", "truck", "motorcycle", "traffic light"],
+    1: ["person"],
+    2: ["person", "car"],
+    4: ["person", "car", "bicycle", "dog"],
+    8: [
+        "person",
+        "car",
+        "bicycle",
+        "dog",
+        "bus",
+        "truck",
+        "motorcycle",
+        "traffic light",
+    ],
     16: COCO_80[:16],
     80: COCO_80,
 }
@@ -155,7 +231,9 @@ def benchmark_one(predictor, frames, warmup_frames, classes):
         t_bb = time.perf_counter()
 
         results = predictor.predict(
-            state, confidence_threshold=CONFIDENCE, nms_threshold=NMS,
+            state,
+            confidence_threshold=CONFIDENCE,
+            nms_threshold=NMS,
         )
         torch.cuda.synchronize()
         t_end = time.perf_counter()
@@ -194,19 +272,26 @@ def main():
     # Load SAM3 model once (shared across all backbones)
     print("Loading SAM3 model ...")
     model = build_sam3_image_model(
-        device=device, checkpoint_path="sam3.pt", eval_mode=True,
+        device=device,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
 
     # CSV setup
     fieldnames = [
-        'backbone', 'num_classes',
-        'bb_mean_ms', 'bb_std_ms',
-        'ed_mean_ms', 'ed_std_ms',
-        'total_mean_ms', 'total_std_ms',
-        'fps_mean', 'n_frames',
+        "backbone",
+        "num_classes",
+        "bb_mean_ms",
+        "bb_std_ms",
+        "ed_mean_ms",
+        "ed_std_ms",
+        "total_mean_ms",
+        "total_std_ms",
+        "fps_mean",
+        "n_frames",
     ]
     write_header = not os.path.exists(CSV_FILE)
-    csvf = open(CSV_FILE, 'a', newline='')
+    csvf = open(CSV_FILE, "a", newline="")
     writer = csv.DictWriter(csvf, fieldnames=fieldnames)
     if write_header:
         writer.writeheader()
@@ -221,10 +306,13 @@ def main():
             print(f"\n  SKIP {backbone['name']}: no engine found")
             for nc in CLASS_CONFIGS:
                 run_idx += 1
-                writer.writerow({
-                    'backbone': backbone['name'], 'num_classes': nc,
-                    **{k: 'N/A' for k in fieldnames[2:]},
-                })
+                writer.writerow(
+                    {
+                        "backbone": backbone["name"],
+                        "num_classes": nc,
+                        **dict.fromkeys(fieldnames[2:], "N/A"),
+                    }
+                )
             csvf.flush()
             continue
 
@@ -233,24 +321,30 @@ def main():
             classes = CLASS_CONFIGS[num_classes]
             enc_dec_engine, trt_max_classes = get_enc_dec_config(num_classes)
 
-            print(f"\n{'='*70}")
-            print(f"  [{run_idx}/{total_runs}] {backbone['name']} @ {num_classes} classes")
+            print(f"\n{'=' * 70}")
+            print(
+                f"  [{run_idx}/{total_runs}] {backbone['name']} @ {num_classes} classes"
+            )
             print(f"  Backbone: {engine_path}")
             print(f"  Enc-dec:  {enc_dec_engine} (max_classes={trt_max_classes})")
-            print(f"{'='*70}")
+            print(f"{'=' * 70}")
 
             if not os.path.exists(enc_dec_engine):
                 print(f"  SKIP: {enc_dec_engine} not found")
-                writer.writerow({
-                    'backbone': backbone['name'], 'num_classes': num_classes,
-                    **{k: 'N/A' for k in fieldnames[2:]},
-                })
+                writer.writerow(
+                    {
+                        "backbone": backbone["name"],
+                        "num_classes": num_classes,
+                        **dict.fromkeys(fieldnames[2:], "N/A"),
+                    }
+                )
                 csvf.flush()
                 continue
 
             # Create predictor with this backbone engine
             predictor = Sam3MultiClassPredictorFast(
-                model, device=device,
+                model,
+                device=device,
                 resolution=IMGSZ,
                 trt_engine_path=engine_path,
                 use_fp16=True,
@@ -273,21 +367,24 @@ def main():
             # Run benchmark
             print(f"  Running {WARMUP_FRAMES}+{TIMED_FRAMES} frames ...")
             bb_times, ed_times, total_times = benchmark_one(
-                predictor, frames, WARMUP_FRAMES, classes,
+                predictor,
+                frames,
+                WARMUP_FRAMES,
+                classes,
             )
 
             # Stats
             row = {
-                'backbone': backbone['name'],
-                'num_classes': num_classes,
-                'bb_mean_ms': f"{bb_times.mean():.1f}",
-                'bb_std_ms': f"{bb_times.std():.1f}",
-                'ed_mean_ms': f"{ed_times.mean():.1f}",
-                'ed_std_ms': f"{ed_times.std():.1f}",
-                'total_mean_ms': f"{total_times.mean():.1f}",
-                'total_std_ms': f"{total_times.std():.1f}",
-                'fps_mean': f"{1000.0 / total_times.mean():.1f}",
-                'n_frames': len(total_times),
+                "backbone": backbone["name"],
+                "num_classes": num_classes,
+                "bb_mean_ms": f"{bb_times.mean():.1f}",
+                "bb_std_ms": f"{bb_times.std():.1f}",
+                "ed_mean_ms": f"{ed_times.mean():.1f}",
+                "ed_std_ms": f"{ed_times.std():.1f}",
+                "total_mean_ms": f"{total_times.mean():.1f}",
+                "total_std_ms": f"{total_times.std():.1f}",
+                "fps_mean": f"{1000.0 / total_times.mean():.1f}",
+                "n_frames": len(total_times),
             }
             writer.writerow(row)
             csvf.flush()
@@ -295,7 +392,9 @@ def main():
             print(f"\n  >> {backbone['name']} @ {num_classes}cls:")
             print(f"     BB:    {bb_times.mean():.1f} +/- {bb_times.std():.1f} ms")
             print(f"     E-D:   {ed_times.mean():.1f} +/- {ed_times.std():.1f} ms")
-            print(f"     Total: {total_times.mean():.1f} +/- {total_times.std():.1f} ms")
+            print(
+                f"     Total: {total_times.mean():.1f} +/- {total_times.std():.1f} ms"
+            )
             print(f"     FPS:   {1000.0 / total_times.mean():.1f}")
 
             # Cleanup predictor to free GPU memory
@@ -305,30 +404,34 @@ def main():
     csvf.close()
 
     # Print summary table
-    print(f"\n\n{'='*70}")
+    print(f"\n\n{'=' * 70}")
     print(f"  BENCHMARK COMPLETE — results in {CSV_FILE}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # Read and print CSV
-    with open(CSV_FILE, 'r') as f:
+    with open(CSV_FILE, "r") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 
-    print(f"\n{'Backbone':<20} {'#Cls':>5} {'BB(ms)':>10} {'E-D(ms)':>10} "
-          f"{'Total(ms)':>12} {'FPS':>8}")
-    print(f"{'-'*20} {'-'*5} {'-'*10} {'-'*10} {'-'*12} {'-'*8}")
+    print(
+        f"\n{'Backbone':<20} {'#Cls':>5} {'BB(ms)':>10} {'E-D(ms)':>10} "
+        f"{'Total(ms)':>12} {'FPS':>8}"
+    )
+    print(f"{'-' * 20} {'-' * 5} {'-' * 10} {'-' * 10} {'-' * 12} {'-' * 8}")
     for r in rows:
-        bb = r['bb_mean_ms']
-        ed = r['ed_mean_ms']
-        total = r['total_mean_ms']
-        total_std = r['total_std_ms']
-        fps = r['fps_mean']
-        if total != 'N/A':
+        bb = r["bb_mean_ms"]
+        ed = r["ed_mean_ms"]
+        total = r["total_mean_ms"]
+        total_std = r["total_std_ms"]
+        fps = r["fps_mean"]
+        if total != "N/A":
             total_str = f"{total}+/-{total_std}"
         else:
             total_str = "N/A"
-        print(f"{r['backbone']:<20} {r['num_classes']:>5} {bb:>10} {ed:>10} "
-              f"{total_str:>12} {fps:>8}")
+        print(
+            f"{r['backbone']:<20} {r['num_classes']:>5} {bb:>10} {ed:>10} "
+            f"{total_str:>12} {fps:>8}"
+        )
 
 
 if __name__ == "__main__":

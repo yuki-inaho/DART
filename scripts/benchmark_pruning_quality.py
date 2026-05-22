@@ -35,7 +35,6 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -44,11 +43,11 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sam3.coco_classes import COCO_CLASSES
-from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+from sam3.model_builder import build_sam3_image_model
 
 
-def load_yolo_labels(label_path: str) -> List[Tuple[int, float, float, float, float]]:
+def load_yolo_labels(label_path: str) -> list[tuple[int, float, float, float, float]]:
     """Load YOLO format labels: class_id cx cy w h (normalized 0-1)."""
     labels = []
     if not os.path.exists(label_path):
@@ -59,16 +58,20 @@ def load_yolo_labels(label_path: str) -> List[Tuple[int, float, float, float, fl
             if len(parts) >= 5:
                 cid = int(parts[0])
                 cx, cy, w, h = (
-                    float(parts[1]), float(parts[2]),
-                    float(parts[3]), float(parts[4]),
+                    float(parts[1]),
+                    float(parts[2]),
+                    float(parts[3]),
+                    float(parts[4]),
                 )
                 labels.append((cid, cx, cy, w, h))
     return labels
 
 
 def yolo_to_xyxy(
-    labels: List[Tuple], img_w: int, img_h: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    labels: list[tuple],
+    img_w: int,
+    img_h: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Convert YOLO labels to xyxy boxes + class ids."""
     if not labels:
         return torch.zeros(0, 4), torch.zeros(0, dtype=torch.long)
@@ -89,7 +92,8 @@ def yolo_to_xyxy(
 
 
 def box_iou_matrix(
-    boxes_a: torch.Tensor, boxes_b: torch.Tensor,
+    boxes_a: torch.Tensor,
+    boxes_b: torch.Tensor,
 ) -> torch.Tensor:
     """Pairwise box IoU between two sets of xyxy boxes."""
     M, N = boxes_a.shape[0], boxes_b.shape[0]
@@ -115,17 +119,17 @@ def match_predictions_to_gt(
     gt_boxes: torch.Tensor,
     gt_cids: torch.Tensor,
     iou_threshold: float = 0.5,
-) -> Dict:
+) -> dict:
     """Match predictions to GT via greedy box IoU."""
     n_pred = len(pred_boxes)
     n_gt = len(gt_boxes)
 
     if n_gt == 0 and n_pred == 0:
-        return dict(tp=0, fp=0, fn=0, cls_correct=0)
+        return {"tp": 0, "fp": 0, "fn": 0, "cls_correct": 0}
     if n_gt == 0:
-        return dict(tp=0, fp=n_pred, fn=0, cls_correct=0)
+        return {"tp": 0, "fp": n_pred, "fn": 0, "cls_correct": 0}
     if n_pred == 0:
-        return dict(tp=0, fp=0, fn=n_gt, cls_correct=0)
+        return {"tp": 0, "fp": 0, "fn": n_gt, "cls_correct": 0}
 
     iou_mat = box_iou_matrix(pred_boxes, gt_boxes)
 
@@ -150,19 +154,19 @@ def match_predictions_to_gt(
             cls_correct += 1
 
     tp = len(pred_matched)
-    return dict(
-        tp=tp,
-        fp=n_pred - tp,
-        fn=n_gt - len(gt_matched),
-        cls_correct=cls_correct,
-    )
+    return {
+        "tp": tp,
+        "fp": n_pred - tp,
+        "fn": n_gt - len(gt_matched),
+        "cls_correct": cls_correct,
+    }
 
 
 def compute_ap_per_class(
-    all_preds: List[Dict],
+    all_preds: list[dict],
     iou_threshold: float = 0.5,
     num_classes: int = 80,
-) -> Tuple[float, Dict[int, float]]:
+) -> tuple[float, dict[int, float]]:
     """Compute per-class AP@50 and mAP@50 using COCO-style 101-pt interp."""
     class_preds = defaultdict(list)
     class_n_gt = defaultdict(int)
@@ -243,7 +247,7 @@ def compute_ap_per_class(
     return mAP, per_class_ap
 
 
-def parse_config(config_str: str) -> Dict:
+def parse_config(config_str: str) -> dict:
     """Parse config string into a dict.
 
     Formats:
@@ -280,7 +284,7 @@ def parse_config(config_str: str) -> Dict:
     return result
 
 
-def apply_mask_config(trunk, mask_blocks: Optional[List[str]]):
+def apply_mask_config(trunk, mask_blocks: list[str] | None):
     """Toggle mask_attn/mask_mlp on trunk blocks."""
     for blk in trunk.blocks:
         blk.mask_attn = False
@@ -302,9 +306,11 @@ def apply_mask_config(trunk, mask_blocks: Optional[List[str]]):
 
 
 def find_image_label_pairs(
-    images_dir: str, labels_dir: str, max_images: int,
+    images_dir: str,
+    labels_dir: str,
+    max_images: int,
     most_annotations: bool = False,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Find matching image-label pairs.
 
     If most_annotations=True, sorts by annotation count descending and
@@ -325,26 +331,27 @@ def find_image_label_pairs(
         def count_lines(pair):
             with open(pair[1]) as f:
                 return sum(1 for line in f if line.strip())
+
         all_pairs.sort(key=count_lines, reverse=True)
 
     return all_pairs[:max_images]
 
 
 def evaluate_config(
-    config: Dict,
+    config: dict,
     model,
-    class_names: List[str],
+    class_names: list[str],
     eval_cids: set,
-    pairs: List[Tuple[str, str]],
-    trt_enc_dec_path: Optional[str],
+    pairs: list[tuple[str, str]],
+    trt_enc_dec_path: str | None,
     trt_max_classes: int,
     imgsz: int,
     confidence: float,
     nms: float,
     iou_threshold: float,
     device: str,
-    text_cache: Optional[str] = None,
-) -> Dict:
+    text_cache: str | None = None,
+) -> dict:
     """Run evaluation for a single config."""
     config_name = config["name"]
     trt_engine = config["trt"]
@@ -362,7 +369,7 @@ def evaluate_config(
     use_trt_enc_dec = trt_enc_dec_path is not None and is_trt
     mode_str = f"TRT ({os.path.basename(trt_engine)})" if is_trt else "PyTorch"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Config: {config_name}")
     print(f"  Backbone: {mode_str}")
     print(f"  Resolution: {config_imgsz}")
@@ -370,8 +377,8 @@ def evaluate_config(
     if use_trt_enc_dec:
         print(f"  Enc-dec: TRT ({os.path.basename(trt_enc_dec_path)})")
     else:
-        print(f"  Enc-dec: PyTorch")
-    print(f"{'='*60}")
+        print("  Enc-dec: PyTorch")
+    print(f"{'=' * 60}")
 
     # Create predictor for this config
     # PyTorch-only configs don't use TRT enc-dec (resolution may differ)
@@ -420,9 +427,7 @@ def evaluate_config(
         img_w, img_h = image.size
         labels = load_yolo_labels(label_path)
         labels = [
-            (cid, cx, cy, w, h)
-            for cid, cx, cy, w, h in labels
-            if cid in eval_cids
+            (cid, cx, cy, w, h) for cid, cx, cy, w, h in labels if cid in eval_cids
         ]
         gt_boxes, gt_cids = yolo_to_xyxy(labels, img_w, img_h)
 
@@ -449,17 +454,23 @@ def evaluate_config(
             pred_scores = torch.zeros(0)
             pred_cids = torch.zeros(0, dtype=torch.long)
 
-        all_img_data.append({
-            "pred_boxes": pred_boxes,
-            "pred_scores": pred_scores,
-            "pred_cids": pred_cids,
-            "gt_boxes": gt_boxes,
-            "gt_cids": gt_cids,
-        })
+        all_img_data.append(
+            {
+                "pred_boxes": pred_boxes,
+                "pred_scores": pred_scores,
+                "pred_cids": pred_cids,
+                "gt_boxes": gt_boxes,
+                "gt_cids": gt_cids,
+            }
+        )
 
         m = match_predictions_to_gt(
-            pred_boxes, pred_scores, pred_cids,
-            gt_boxes, gt_cids, iou_threshold=iou_threshold,
+            pred_boxes,
+            pred_scores,
+            pred_cids,
+            gt_boxes,
+            gt_cids,
+            iou_threshold=iou_threshold,
         )
         total_tp += m["tp"]
         total_fp += m["fp"]
@@ -479,7 +490,9 @@ def evaluate_config(
     avg_ms = total_ms / max(n_evaluated, 1)
 
     mAP, per_class_ap = compute_ap_per_class(
-        all_img_data, iou_threshold=iou_threshold, num_classes=80,
+        all_img_data,
+        iou_threshold=iou_threshold,
+        num_classes=80,
     )
 
     result = {
@@ -498,9 +511,11 @@ def evaluate_config(
         "per_class_ap": per_class_ap,
     }
 
-    print(f"  Results: Dets={total_preds}, GT={total_gt}, "
-          f"P={precision:.3f} R={recall:.3f} F1={f1:.3f} "
-          f"mAP@50={mAP:.3f} ({avg_ms:.0f}ms/img)")
+    print(
+        f"  Results: Dets={total_preds}, GT={total_gt}, "
+        f"P={precision:.3f} R={recall:.3f} F1={f1:.3f} "
+        f"mAP@50={mAP:.3f} ({avg_ms:.0f}ms/img)"
+    )
 
     # Clean up TRT resources
     del predictor
@@ -522,29 +537,40 @@ def main():
     parser.add_argument("--nms", type=float, default=0.7)
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument(
-        "--trt-enc-dec", type=str, default=None,
+        "--trt-enc-dec",
+        type=str,
+        default=None,
         help="Shared TRT enc-dec engine (used for all configs)",
     )
     parser.add_argument("--trt-max-classes", type=int, default=80)
     parser.add_argument(
-        "--text-cache", type=str, default=None,
+        "--text-cache",
+        type=str,
+        default=None,
         help="Path to cache text embeddings (.pt file)",
     )
     parser.add_argument(
-        "--coco", action="store_true",
+        "--coco",
+        action="store_true",
         help="Use all 80 COCO classes",
     )
     parser.add_argument(
-        "--classes", nargs="+", type=str, default=None,
+        "--classes",
+        nargs="+",
+        type=str,
+        default=None,
         help="Subset of class names (default: all 80 COCO if --coco)",
     )
     parser.add_argument(
-        "--configs", nargs="+", required=True,
+        "--configs",
+        nargs="+",
+        required=True,
         help='Configs: "name", "name=trt:engine", "name=mask:spec", '
-             '"name=trt:engine;mask:spec", "name=pytorch"',
+        '"name=trt:engine;mask:spec", "name=pytorch"',
     )
     parser.add_argument(
-        "--most-annotations", action="store_true",
+        "--most-annotations",
+        action="store_true",
         help="Select images with the most GT annotations (more informative)",
     )
     parser.add_argument("--device", default="cuda")
@@ -571,7 +597,9 @@ def main():
 
     # Find image-label pairs
     pairs = find_image_label_pairs(
-        args.images_dir, args.labels_dir, args.max_images,
+        args.images_dir,
+        args.labels_dir,
+        args.max_images,
         most_annotations=args.most_annotations,
     )
     n_images = len(pairs)
@@ -621,8 +649,7 @@ def main():
     # Summary table
     W = 110
     print(f"\n\n{'=' * W}")
-    print(f"PRUNING QUALITY BENCHMARK  "
-          f"({n_images} images, {n_classes} classes)")
+    print(f"PRUNING QUALITY BENCHMARK  ({n_images} images, {n_classes} classes)")
     print(f"{'=' * W}")
     header = (
         f"  {'Config':<20s}  {'Mode':<8s}  {'Res':>4s}  {'Pruned':>6s}  {'Dets':>6s}  "
@@ -648,9 +675,11 @@ def main():
         )
 
     print(f"{'=' * W}")
-    print(f"  GT annotations: {results_table[0]['total_gt']}  "
-          f"(conf={args.confidence}, NMS={args.nms}, "
-          f"IoU={args.iou_threshold})")
+    print(
+        f"  GT annotations: {results_table[0]['total_gt']}  "
+        f"(conf={args.confidence}, NMS={args.nms}, "
+        f"IoU={args.iou_threshold})"
+    )
 
     # Relative quality table
     if len(results_table) > 1 and baseline_map and baseline_map > 0:
@@ -661,9 +690,11 @@ def main():
             rel = r["mAP50"] / baseline_map * 100
             delta = r["mAP50"] - baseline_map
             speed = baseline_ms / r["avg_ms"] if r["avg_ms"] > 0 else 0
-            print(f"  {r['name']:<20s}  mAP@50={r['mAP50']:.3f}  "
-                  f"({rel:5.1f}%, {delta:+.3f})  "
-                  f"speed={speed:.2f}x")
+            print(
+                f"  {r['name']:<20s}  mAP@50={r['mAP50']:.3f}  "
+                f"({rel:5.1f}%, {delta:+.3f})  "
+                f"speed={speed:.2f}x"
+            )
         print(f"{'=' * 65}")
 
     # Per-class top/bottom for first config

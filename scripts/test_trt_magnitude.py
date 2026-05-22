@@ -10,10 +10,10 @@ error explodes.
 """
 
 import sys
-import time
-import torch
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -103,7 +103,10 @@ def make_chained_matmul_onnx(num_layers, dim, output_path):
     for i in range(num_layers):
         # Use orthogonal-like weights to prevent explosion/vanishing
         # Initialize as identity + small perturbation (like a well-initialized linear layer)
-        W_np = np.eye(dim, dtype=np.float32) + np.random.randn(dim, dim).astype(np.float32) * 0.01
+        W_np = (
+            np.eye(dim, dtype=np.float32)
+            + np.random.randn(dim, dim).astype(np.float32) * 0.01
+        )
         weight_tensors.append(W_np)
 
         w_name = f"W_{i}"
@@ -145,20 +148,34 @@ def make_vit_block_onnx(num_blocks, dim, output_path):
         ln_b = np.zeros(dim, dtype=np.float32)
         ln_w_name = f"ln_w_{i}"
         ln_b_name = f"ln_b_{i}"
-        initializers.append(helper.make_tensor(ln_w_name, TensorProto.FLOAT, [dim], ln_w))
-        initializers.append(helper.make_tensor(ln_b_name, TensorProto.FLOAT, [dim], ln_b))
+        initializers.append(
+            helper.make_tensor(ln_w_name, TensorProto.FLOAT, [dim], ln_w)
+        )
+        initializers.append(
+            helper.make_tensor(ln_b_name, TensorProto.FLOAT, [dim], ln_b)
+        )
 
         # LayerNorm
         ln_out = f"ln_{i}"
-        nodes.append(helper.make_node(
-            "LayerNormalization", [prev_name, ln_w_name, ln_b_name], [ln_out],
-            axis=-1, epsilon=1e-6
-        ))
+        nodes.append(
+            helper.make_node(
+                "LayerNormalization",
+                [prev_name, ln_w_name, ln_b_name],
+                [ln_out],
+                axis=-1,
+                epsilon=1e-6,
+            )
+        )
 
         # MatMul weight (identity + perturbation)
-        W_np = np.eye(dim, dtype=np.float32) + np.random.randn(dim, dim).astype(np.float32) * 0.02
+        W_np = (
+            np.eye(dim, dtype=np.float32)
+            + np.random.randn(dim, dim).astype(np.float32) * 0.02
+        )
         w_name = f"W_{i}"
-        initializers.append(helper.make_tensor(w_name, TensorProto.FLOAT, [dim, dim], W_np.flatten()))
+        initializers.append(
+            helper.make_tensor(w_name, TensorProto.FLOAT, [dim, dim], W_np.flatten())
+        )
 
         mm_out = f"mm_{i}"
         nodes.append(helper.make_node("MatMul", [ln_out, w_name], [mm_out]))
@@ -177,8 +194,10 @@ def make_vit_block_onnx(num_blocks, dim, output_path):
 def test_magnitude_effect():
     """Test if input magnitude affects TRT FP16 MatMul precision."""
     print("\n  Single MatMul precision vs input magnitude:")
-    print(f"  {'Magnitude':>10s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Output range':>20s}")
+    print(
+        f"  {'Magnitude':>10s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Output range':>20s}"
+    )
     print("  " + "-" * 100)
 
     # Use realistic ViT dimensions: 5184 tokens, 1024 hidden, 3072 QKV output
@@ -188,7 +207,9 @@ def test_magnitude_effect():
     for magnitude in [1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 300.0, 500.0]:
         # Use same weights each time
         torch.manual_seed(42)
-        W_np = np.random.randn(K, N).astype(np.float32) * 0.02  # Small weights like real init
+        W_np = (
+            np.random.randn(K, N).astype(np.float32) * 0.02
+        )  # Small weights like real init
         make_matmul_onnx(M, K, N, onnx_path, weight_data=W_np)
         W_torch = torch.from_numpy(W_np).to(DEVICE)
 
@@ -215,8 +236,10 @@ def test_magnitude_effect():
         trt_diff = (Y_fp32 - Y_trt16).abs().max().item()
 
         out_range = f"[{Y_fp32.min().item():.1f}, {Y_fp32.max().item():.1f}]"
-        print(f"  {magnitude:>10.1f} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {out_range:>20s}")
+        print(
+            f"  {magnitude:>10.1f} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {out_range:>20s}"
+        )
 
     Path(onnx_path).unlink(missing_ok=True)
 
@@ -224,8 +247,10 @@ def test_magnitude_effect():
 def test_chained_matmul_depth():
     """Test how chained MatMul error compounds in TRT FP16 vs PyTorch FP16."""
     print("\n  Chained MatMul error vs depth (dim=1024):")
-    print(f"  {'Depth':>6s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'Output absmax':>14s}")
+    print(
+        f"  {'Depth':>6s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'Output absmax':>14s}"
+    )
     print("  " + "-" * 75)
 
     dim = 1024
@@ -262,8 +287,10 @@ def test_chained_matmul_depth():
         ).item()
         trt_diff = (x_fp32 - Y_trt16).abs().max().item()
 
-        print(f"  {depth:>6d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {x_fp32.abs().max().item():>14.4f}")
+        print(
+            f"  {depth:>6d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {x_fp32.abs().max().item():>14.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -272,8 +299,10 @@ def test_vit_block_depth():
     """Test ViT-like blocks (LN -> MatMul -> Add) to see if residual connections
     amplify FP16 error in TRT differently than in PyTorch."""
     print("\n  ViT-like block (LN->MatMul->Add) error vs depth (dim=256):")
-    print(f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Output absmax':>14s}")
+    print(
+        f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Output absmax':>14s}"
+    )
     print("  " + "-" * 85)
 
     dim = 256  # Smaller to keep ONNX manageable
@@ -294,7 +323,10 @@ def test_vit_block_depth():
             torch.manual_seed(42 + i)  # Deterministic per-block
             np.random.seed(42)  # Reset numpy seed to match ONNX
             _ = np.random.randn(dim, dim)  # Skip to match iteration
-            W = torch.eye(dim, device=DEVICE) + torch.randn(dim, dim, device=DEVICE) * 0.02
+            W = (
+                torch.eye(dim, device=DEVICE)
+                + torch.randn(dim, dim, device=DEVICE) * 0.02
+            )
             # Re-seed properly - we need to match exactly
             # Actually, let's just read weights from ONNX
             pass
@@ -303,7 +335,9 @@ def test_vit_block_depth():
         onnx_model = onnx.load(onnx_path)
         weights = {}
         for init in onnx_model.graph.initializer:
-            weights[init.name] = torch.from_numpy(numpy_helper.to_array(init)).to(DEVICE)
+            weights[init.name] = torch.from_numpy(numpy_helper.to_array(init)).to(
+                DEVICE
+            )
 
         # FP32 reference
         x_fp32 = X.clone()
@@ -335,8 +369,10 @@ def test_vit_block_depth():
         ).item()
         trt_diff = (x_fp32 - Y_trt16).abs().max().item()
 
-        print(f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {x_fp32.abs().max().item():>14.4f}")
+        print(
+            f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {x_fp32.abs().max().item():>14.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 
@@ -344,8 +380,10 @@ def test_vit_block_depth():
 def test_vit_block_1024():
     """Same as above but with dim=1024 (matching ViT-H) - fewer blocks to stay manageable."""
     print("\n  ViT-like block (LN->MatMul->Add) at dim=1024:")
-    print(f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
-          f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Output absmax':>14s}")
+    print(
+        f"  {'Blocks':>7s} | {'TRT FP16 cos':>12s} | {'PT FP16 cos':>12s} | "
+        f"{'TRT max_diff':>12s} | {'PT max_diff':>12s} | {'Output absmax':>14s}"
+    )
     print("  " + "-" * 85)
 
     dim = 1024
@@ -362,7 +400,9 @@ def test_vit_block_1024():
         onnx_model = onnx.load(onnx_path)
         weights = {}
         for init in onnx_model.graph.initializer:
-            weights[init.name] = torch.from_numpy(numpy_helper.to_array(init)).to(DEVICE)
+            weights[init.name] = torch.from_numpy(numpy_helper.to_array(init)).to(
+                DEVICE
+            )
 
         # FP32 reference
         x_fp32 = X.clone()
@@ -394,8 +434,10 @@ def test_vit_block_1024():
         ).item()
         trt_diff = (x_fp32 - Y_trt16).abs().max().item()
 
-        print(f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
-              f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {x_fp32.abs().max().item():>14.4f}")
+        print(
+            f"  {num_blocks:>7d} | {trt_cos:>12.6f} | {pt_cos:>12.6f} | "
+            f"{trt_diff:>12.4f} | {pt_diff:>12.4f} | {x_fp32.abs().max().item():>14.4f}"
+        )
 
         Path(onnx_path).unlink(missing_ok=True)
 

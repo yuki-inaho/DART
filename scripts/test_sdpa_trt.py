@@ -18,7 +18,6 @@ import argparse
 import os
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -47,20 +46,29 @@ class _BackboneForExport(nn.Module):
         return fpn[0], fpn[1], fpn[2]
 
 
-def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
-                    engine_path, patch_sdpa=True):
+def export_and_test(
+    backbone,
+    dummy,
+    img_tensor,
+    ref_dict,
+    label,
+    onnx_path,
+    engine_path,
+    patch_sdpa=True,
+):
     """Export backbone → ONNX → TRT FP16 engine, then test accuracy."""
     from sam3.trt.rope_onnx import patch_rope_for_export, unpatch_rope
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {label}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Patch RoPE (always needed for ONNX)
     patch_rope_for_export(backbone)
 
     if patch_sdpa:
         from sam3.trt.rope_onnx import patch_sdpa_for_export
+
         patch_sdpa_for_export(backbone)
 
     export_module = _BackboneForExport(backbone).cuda().eval()
@@ -80,8 +88,10 @@ def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
 
     # Print ONNX op counts
     try:
-        import onnx
         from collections import Counter
+
+        import onnx
+
         model = onnx.load(onnx_path)
         ops = Counter(n.op_type for n in model.graph.node)
         print(f"  ONNX: {len(model.graph.node)} nodes")
@@ -95,11 +105,13 @@ def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
     unpatch_rope(backbone)
     if patch_sdpa:
         from sam3.trt.rope_onnx import unpatch_sdpa
+
         unpatch_sdpa(backbone)
 
     # Build TRT FP16 engine
     print(f"  Building TRT FP16 engine: {engine_path} ...")
     from sam3.trt.build_engine import build_engine
+
     build_engine(
         onnx_path=onnx_path,
         output_path=engine_path,
@@ -109,8 +121,9 @@ def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
     )
 
     # Test accuracy
-    print(f"  Testing accuracy...")
+    print("  Testing accuracy...")
     from sam3.trt.trt_backbone import TRTBackbone
+
     trt_bb = TRTBackbone(engine_path, device="cuda")
 
     with torch.inference_mode():
@@ -122,7 +135,7 @@ def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
         torch.cuda.synchronize()
 
     trt_fpn = trt_out["backbone_fpn"]
-    print(f"  Cosine similarity vs PyTorch FP32:")
+    print("  Cosine similarity vs PyTorch FP32:")
     for i in range(len(trt_fpn)):
         k = f"fpn_{i}"
         cos = cosine_similarity(ref_dict[k], trt_fpn[i])
@@ -130,7 +143,7 @@ def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
         print(f"    {k}: cos={cos:.6f} [{status}]")
 
     # Also test with pure FP16 (no mixed precision)
-    print(f"\n  Building PURE FP16 engine (no mixed precision)...")
+    print("\n  Building PURE FP16 engine (no mixed precision)...")
     engine_path_pure = engine_path.replace(".engine", "_pure.engine")
     build_engine(
         onnx_path=onnx_path,
@@ -148,7 +161,7 @@ def export_and_test(backbone, dummy, img_tensor, ref_dict, label, onnx_path,
         torch.cuda.synchronize()
 
     trt_fpn2 = trt_out2["backbone_fpn"]
-    print(f"  Pure FP16 cosine similarity:")
+    print("  Pure FP16 cosine similarity:")
     for i in range(len(trt_fpn2)):
         k = f"fpn_{i}"
         cos = cosine_similarity(ref_dict[k], trt_fpn2[i])
@@ -186,16 +199,22 @@ def main():
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"PyTorch: {torch.__version__}")
 
-    from sam3.model_builder import build_sam3_image_model
-    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
     from torchvision.transforms import v2
 
+    from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
+    from sam3.model_builder import build_sam3_image_model
+
     model = build_sam3_image_model(
-        device=device, checkpoint_path=args.checkpoint, eval_mode=True,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        eval_mode=True,
     )
     predictor = Sam3MultiClassPredictorFast(
-        model, device=device, resolution=1008,
-        use_fp16=False, detection_only=True,
+        model,
+        device=device,
+        resolution=1008,
+        use_fp16=False,
+        detection_only=True,
     )
 
     image = Image.open(args.image).convert("RGB")
@@ -215,7 +234,10 @@ def main():
 
     # Test 1: WITH SDPA patch (our current approach)
     export_and_test(
-        backbone, dummy, img_tensor, ref_dict,
+        backbone,
+        dummy,
+        img_tensor,
+        ref_dict,
         "WITH _fp32_sdpa patch (explicit FP32 matmul)",
         "backbone_sdpa_patched.onnx",
         "backbone_sdpa_patched.engine",
@@ -224,7 +246,10 @@ def main():
 
     # Test 2: WITHOUT SDPA patch (native SDPA)
     export_and_test(
-        backbone, dummy, img_tensor, ref_dict,
+        backbone,
+        dummy,
+        img_tensor,
+        ref_dict,
         "WITHOUT SDPA patch (native F.scaled_dot_product_attention)",
         "backbone_native_sdpa.onnx",
         "backbone_native_sdpa.engine",

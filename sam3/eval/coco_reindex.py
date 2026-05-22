@@ -10,10 +10,10 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 
-def reindex_coco_to_temp(input_json_path: str) -> Optional[str]:
+def reindex_coco_to_temp(input_json_path: str) -> str | None:
     """
     Convert 0-indexed COCO JSON file to 1-indexed and save to temporary location.
 
@@ -29,7 +29,7 @@ def reindex_coco_to_temp(input_json_path: str) -> Optional[str]:
         ValueError: If input file is not a valid COCO format
     """
 
-    def is_coco_json(data: Dict[str, Any]) -> bool:
+    def is_coco_json(data: dict[str, Any]) -> bool:
         """Check if data appears to be a COCO format file."""
         if not isinstance(data, dict):
             return False
@@ -37,7 +37,7 @@ def reindex_coco_to_temp(input_json_path: str) -> Optional[str]:
         coco_keys = {"images", "annotations", "categories"}
         return any(key in data for key in coco_keys)
 
-    def check_zero_indexed(data: Dict[str, Any]) -> Tuple[bool, bool, bool]:
+    def check_zero_indexed(data: dict[str, Any]) -> tuple[bool, bool, bool]:
         """
         Check if annotations, images, or categories start from index 0.
 
@@ -65,7 +65,7 @@ def reindex_coco_to_temp(input_json_path: str) -> Optional[str]:
 
         return annotations_zero, images_zero, categories_zero
 
-    def reindex_coco_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    def reindex_coco_data(data: dict[str, Any]) -> dict[str, Any]:
         """Convert 0-indexed COCO data to 1-indexed."""
         modified_data = data.copy()
 

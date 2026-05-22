@@ -3,8 +3,9 @@
 # pyre-unsafe
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 

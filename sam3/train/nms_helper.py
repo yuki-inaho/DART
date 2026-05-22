@@ -14,7 +14,7 @@ try:
     HAS_NUMBA = True
 except ImportError:
     warnings.warn(
-        "Numba not found. Using slower pure Python implementations.", UserWarning
+        "Numba not found. Using slower pure Python implementations.", UserWarning, stacklevel=2
     )
 
 

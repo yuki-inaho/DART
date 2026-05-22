@@ -56,15 +56,13 @@ Usage:
     results = predictor.predict(state, confidence_threshold=0.3)
 """
 
-from typing import Dict, List, Optional, Tuple, Union
-
 import numpy as np
 import PIL
 import torch
 import torch.nn.functional as F
+from torchvision.ops import batched_nms as _batched_nms
+from torchvision.ops import nms as _nms
 from torchvision.transforms import v2
-
-from torchvision.ops import batched_nms as _batched_nms, nms as _nms
 
 from sam3.model.box_ops import box_cxcywh_to_xyxy
 from sam3.model.data_misc import interpolate
@@ -84,6 +82,7 @@ class _TRTModelStub:
 
         class _DummyForward:
             """Provides a ``.forward`` attribute that raises on call."""
+
             def forward(self, *args, **kwargs):
                 raise RuntimeError(
                     "Not available in TRT-only mode. "
@@ -117,13 +116,11 @@ class _TRTModelStub:
 
     def _get_img_feats(self, backbone_out, img_ids):
         """Extract and reshape image features from backbone output."""
-        vis_feats = backbone_out["backbone_fpn"][-self.num_feature_levels:]
-        vis_pos_enc = backbone_out["vision_pos_enc"][-self.num_feature_levels:]
+        vis_feats = backbone_out["backbone_fpn"][-self.num_feature_levels :]
+        vis_pos_enc = backbone_out["vision_pos_enc"][-self.num_feature_levels :]
         vis_feat_sizes = [x.shape[-2:] for x in vis_pos_enc]
         img_feats = [x[img_ids].flatten(2).permute(2, 0, 1) for x in vis_feats]
-        img_pos_embeds = [
-            x[img_ids].flatten(2).permute(2, 0, 1) for x in vis_pos_enc
-        ]
+        img_pos_embeds = [x[img_ids].flatten(2).permute(2, 0, 1) for x in vis_pos_enc]
         return backbone_out, img_feats, img_pos_embeds, vis_feat_sizes
 
 
@@ -143,17 +140,17 @@ class Sam3MultiClassPredictorFast:
         model,
         resolution: int = 1008,
         device: str = "cuda",
-        compile_mode: Optional[str] = None,
+        compile_mode: str | None = None,
         use_fp16: bool = True,
         presence_threshold: float = 0.05,
         shared_encoder: bool = False,
         generic_prompt: str = "object",
         single_pass: bool = False,
         class_method: str = "cosine",
-        prototype_path: Optional[str] = None,
+        prototype_path: str | None = None,
         detection_only: bool = False,
-        trt_engine_path: Optional[str] = None,
-        trt_enc_dec_engine_path: Optional[str] = None,
+        trt_engine_path: str | None = None,
+        trt_enc_dec_engine_path: str | None = None,
         trt_max_classes: int = 4,
     ):
         """
@@ -242,27 +239,27 @@ class Sam3MultiClassPredictorFast:
         )
 
         # Class embedding cache
-        self._class_names: Optional[List[str]] = None
+        self._class_names: list[str] | None = None
         self._num_classes: int = 0
 
         # Batched prompts: (seq, N, d) and (N, seq)
-        self._batched_text: Optional[torch.Tensor] = None
-        self._batched_mask: Optional[torch.Tensor] = None
+        self._batched_text: torch.Tensor | None = None
+        self._batched_mask: torch.Tensor | None = None
 
         # Generic prompt embeddings for shared-encoder mode: (seq, 1, d), (1, seq)
-        self._generic_text: Optional[torch.Tensor] = None
-        self._generic_mask: Optional[torch.Tensor] = None
+        self._generic_text: torch.Tensor | None = None
+        self._generic_mask: torch.Tensor | None = None
 
         # Single-pass mode: concatenated text and per-class cosine embeddings
-        self._concat_text: Optional[torch.Tensor] = None   # (total_seq, 1, d)
-        self._concat_mask: Optional[torch.Tensor] = None   # (1, total_seq)
-        self._class_proj_norm: Optional[torch.Tensor] = None  # (N, d_proj) L2-normalized
+        self._concat_text: torch.Tensor | None = None  # (total_seq, 1, d)
+        self._concat_mask: torch.Tensor | None = None  # (1, total_seq)
+        self._class_proj_norm: torch.Tensor | None = None  # (N, d_proj) L2-normalized
 
         # Attention-based class assignment: token index ranges per class
-        self._class_token_ranges: Optional[List[Tuple[int, int]]] = None
+        self._class_token_ranges: list[tuple[int, int]] | None = None
 
         # Prototype-based class assignment: calibrated per-class centroids
-        self._calibrated_prototypes: Optional[torch.Tensor] = None  # (N, d_proj) L2-norm
+        self._calibrated_prototypes: torch.Tensor | None = None  # (N, d_proj) L2-norm
 
         # torch.compile wrappers (lazy — compiled on first use)
         self._compile_mode = compile_mode
@@ -275,7 +272,7 @@ class Sam3MultiClassPredictorFast:
         # The _postprocess_detection path already handles presence_probs when available.
 
         # Cached zero tensors (avoid repeated allocation)
-        self._prompt_pos_cache: Dict[Tuple[int, ...], torch.Tensor] = {}
+        self._prompt_pos_cache: dict[tuple[int, ...], torch.Tensor] = {}
 
     def _zeros_like_cached(self, tensor: torch.Tensor) -> torch.Tensor:
         """Return a cached zeros tensor matching the given shape/dtype/device."""
@@ -323,9 +320,9 @@ class Sam3MultiClassPredictorFast:
             from sam3.trt.trt_backbone import TRTBackbone
 
             # SAM3VLBackbone uses .vision_backbone, StudentVLBackbone uses .student_backbone
-            if hasattr(backbone, 'vision_backbone'):
+            if hasattr(backbone, "vision_backbone"):
                 pos_module = backbone.vision_backbone.position_encoding
-            elif hasattr(backbone, 'student_backbone'):
+            elif hasattr(backbone, "student_backbone"):
                 pos_module = backbone.student_backbone.position_encoding
             else:
                 pos_module = None
@@ -351,8 +348,8 @@ class Sam3MultiClassPredictorFast:
     @torch.inference_mode()
     def set_classes(
         self,
-        class_names: List[str],
-        text_cache: Optional[str] = None,
+        class_names: list[str],
+        text_cache: str | None = None,
     ) -> None:
         """Pre-compute and cache text embeddings for all target classes.
 
@@ -376,18 +373,19 @@ class Sam3MultiClassPredictorFast:
         # Try loading from cache
         if text_cache is not None:
             import os
+
             if os.path.exists(text_cache):
-                data = torch.load(text_cache, map_location=self.device, weights_only=True)
+                data = torch.load(
+                    text_cache, map_location=self.device, weights_only=True
+                )
                 if data.get("class_names") == list(class_names):
                     self._batched_text = data["text"]
                     self._batched_mask = data["mask"]
                     print(f"  Loaded text embeddings from cache: {text_cache}")
                     return
-                print(f"  Cache class mismatch, recomputing text embeddings")
+                print("  Cache class mismatch, recomputing text embeddings")
 
-        text_outputs = self.model.backbone.forward_text(
-            class_names, device=self.device
-        )
+        text_outputs = self.model.backbone.forward_text(class_names, device=self.device)
         # language_features: (seq, N, d) — already batched
         # language_mask:     (N, seq) — already batched
         self._batched_text = text_outputs["language_features"]
@@ -395,11 +393,14 @@ class Sam3MultiClassPredictorFast:
 
         # Save to cache
         if text_cache is not None:
-            torch.save({
-                "class_names": list(class_names),
-                "text": self._batched_text,
-                "mask": self._batched_mask,
-            }, text_cache)
+            torch.save(
+                {
+                    "class_names": list(class_names),
+                    "text": self._batched_text,
+                    "mask": self._batched_mask,
+                },
+                text_cache,
+            )
             print(f"  Saved text embeddings to cache: {text_cache}")
 
         # Encode generic prompt for shared-encoder mode
@@ -408,7 +409,7 @@ class Sam3MultiClassPredictorFast:
                 [self.generic_prompt], device=self.device
             )
             self._generic_text = generic_out["language_features"]  # (seq, 1, d)
-            self._generic_mask = generic_out["language_mask"]      # (1, seq)
+            self._generic_mask = generic_out["language_mask"]  # (1, seq)
 
         # Single-pass mode: concatenate valid tokens and pre-compute
         # per-class projected embeddings for cosine scoring
@@ -431,16 +432,18 @@ class Sam3MultiClassPredictorFast:
             concat_tokens = torch.cat(all_tokens, dim=0)  # (total_seq, d)
             self._concat_text = concat_tokens.unsqueeze(1)  # (total_seq, 1, d)
             self._concat_mask = torch.zeros(
-                1, concat_tokens.shape[0],
-                dtype=torch.bool, device=self.device,
+                1,
+                concat_tokens.shape[0],
+                dtype=torch.bool,
+                device=self.device,
             )  # all valid (no padding)
 
             # Per-class projected embeddings for cosine/prototype class assignment
             scoring = self.model.dot_prod_scoring
             per_class_proj = []
             for i in range(N):
-                class_text = self._batched_text[:, i:i+1, :]  # (seq, 1, d)
-                class_mask = self._batched_mask[i:i+1, :]     # (1, seq)
+                class_text = self._batched_text[:, i : i + 1, :]  # (seq, 1, d)
+                class_mask = self._batched_mask[i : i + 1, :]  # (1, seq)
                 text_in = class_text
                 if scoring.prompt_mlp is not None:
                     text_in = scoring.prompt_mlp(text_in)
@@ -473,9 +476,9 @@ class Sam3MultiClassPredictorFast:
     @torch.inference_mode()
     def set_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
-        state: Optional[Dict] = None,
-    ) -> Dict:
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
+        state: dict | None = None,
+    ) -> dict:
         """Encode an image through the vision backbone.
 
         Runs the ViT-H backbone under FP16 autocast for ~1.5-2× speedup
@@ -504,9 +507,7 @@ class Sam3MultiClassPredictorFast:
         # Fast path: resize on CPU first so we transfer ~3MB (1008²×3)
         # instead of the full original image (e.g. 6000×4000 = 72MB).
         if isinstance(image, PIL.Image.Image):
-            image = image.resize(
-                (self.resolution, self.resolution), PIL.Image.BILINEAR
-            )
+            image = image.resize((self.resolution, self.resolution), PIL.Image.BILINEAR)
         image_tensor = v2.functional.to_image(image).to(self.device)
         image_tensor = self.transform(image_tensor).unsqueeze(0)
 
@@ -526,8 +527,8 @@ class Sam3MultiClassPredictorFast:
     @torch.inference_mode()
     def _profile_set_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
-    ) -> List[Tuple[str, float]]:
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
+    ) -> list[tuple[str, float]]:
         """Profile set_image breakdown. Returns list of (label, ms) tuples."""
         import time
 
@@ -537,9 +538,7 @@ class Sam3MultiClassPredictorFast:
         torch.cuda.synchronize()
         t0 = time.perf_counter()
         if isinstance(image, PIL.Image.Image):
-            image = image.resize(
-                (self.resolution, self.resolution), PIL.Image.BILINEAR
-            )
+            image = image.resize((self.resolution, self.resolution), PIL.Image.BILINEAR)
         results.append(("PIL resize (CPU)", (time.perf_counter() - t0) * 1000))
 
         torch.cuda.synchronize()
@@ -562,10 +561,10 @@ class Sam3MultiClassPredictorFast:
         torch.cuda.synchronize()
         t0 = time.perf_counter()
         if self._trt_engine_path is not None:
-            backbone_out = self._backbone_fn(image_tensor)
+            self._backbone_fn(image_tensor)
         else:
             with torch.autocast("cuda", dtype=torch.float16, enabled=self.use_fp16):
-                backbone_out = self._backbone_fn(image_tensor)
+                self._backbone_fn(image_tensor)
         torch.cuda.synchronize()
         results.append(("Backbone forward", (time.perf_counter() - t0) * 1000))
 
@@ -574,11 +573,11 @@ class Sam3MultiClassPredictorFast:
     @torch.inference_mode()
     def predict(
         self,
-        state: Dict,
+        state: dict,
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """Run optimized multi-class detection + segmentation.
 
         All N classes run through encoder+decoder in one batched call.
@@ -615,8 +614,11 @@ class Sam3MultiClassPredictorFast:
         if self.single_pass:
             with torch.autocast("cuda", dtype=torch.float16, enabled=self.use_fp16):
                 return self._predict_single_pass(
-                    backbone_out, img_feats, img_pos_embeds,
-                    vis_feat_sizes, img_ids,
+                    backbone_out,
+                    img_feats,
+                    img_pos_embeds,
+                    vis_feat_sizes,
+                    img_ids,
                     confidence_threshold=confidence_threshold,
                     nms_threshold=nms_threshold,
                     per_class_nms=per_class_nms,
@@ -633,8 +635,11 @@ class Sam3MultiClassPredictorFast:
             forward_fn = self._forward_batched
         with torch.autocast("cuda", dtype=torch.float16, enabled=self.use_fp16):
             batched = forward_fn(
-                backbone_out, img_feats, img_pos_embeds,
-                vis_feat_sizes, img_ids,
+                backbone_out,
+                img_feats,
+                img_pos_embeds,
+                vis_feat_sizes,
+                img_ids,
             )
 
         if batched is None:
@@ -654,11 +659,11 @@ class Sam3MultiClassPredictorFast:
     @torch.inference_mode()
     def predict_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """Convenience: set_image + predict in one call."""
         state = self.set_image(image)
         return self.predict(
@@ -674,12 +679,12 @@ class Sam3MultiClassPredictorFast:
 
     def _forward_batched(
         self,
-        backbone_out: Dict,
+        backbone_out: dict,
         img_feats: list,
         img_pos_embeds: list,
         vis_feat_sizes: list,
         img_ids: torch.Tensor,
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """Run encoder+decoder for all N classes in one batched call.
 
         Image features (bs=1) are repeated N times along the batch dim.
@@ -698,8 +703,8 @@ class Sam3MultiClassPredictorFast:
         batched_img_feats = [f.expand(-1, N, -1) for f in img_feats]
         batched_img_pos = [p.expand(-1, N, -1) for p in img_pos_embeds]
 
-        prompt = self._batched_text        # (seq, N, d)
-        prompt_mask = self._batched_mask   # (N, seq)
+        prompt = self._batched_text  # (seq, N, d)
+        prompt_mask = self._batched_mask  # (N, seq)
 
         # --- Encoder (bs=N) ---
         prompt_pos_embed = self._zeros_like_cached(prompt)
@@ -765,24 +770,24 @@ class Sam3MultiClassPredictorFast:
             return None
 
         return {
-            "scores_all": scores[-1],            # (N, Q, 1)
-            "boxes_all": outputs_coord[-1],      # (N, Q, 4) cxcywh
-            "hs_all": hs,                        # (layers, N, Q, d)
+            "scores_all": scores[-1],  # (N, Q, 1)
+            "boxes_all": outputs_coord[-1],  # (N, Q, 4) cxcywh
+            "hs_all": hs,  # (layers, N, Q, d)
             "encoder_hidden_states": encoder_hidden_states,  # (tokens, N, d)
-            "prompt": prompt,                    # (seq, N, d)
-            "prompt_mask": prompt_mask,          # (N, seq)
-            "presence_probs": presence_probs,    # (N,) or None
+            "prompt": prompt,  # (seq, N, d)
+            "prompt_mask": prompt_mask,  # (N, seq)
+            "presence_probs": presence_probs,  # (N,) or None
             "present_indices": present_indices,  # (K,) indices
         }
 
     def _forward_shared_encoder(
         self,
-        backbone_out: Dict,
+        backbone_out: dict,
         img_feats: list,
         img_pos_embeds: list,
         vis_feat_sizes: list,
         img_ids: torch.Tensor,
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """Shared-encoder mode: encoder(bs=1) + decoder(bs=N).
 
         Runs the encoder once with a generic scene-level prompt, then
@@ -797,14 +802,14 @@ class Sam3MultiClassPredictorFast:
         N = self._num_classes
 
         # --- Encoder: bs=1 with generic prompt ---
-        generic_text = self._generic_text   # (seq, 1, d)
-        generic_mask = self._generic_mask   # (1, seq)
+        generic_text = self._generic_text  # (seq, 1, d)
+        generic_mask = self._generic_mask  # (1, seq)
 
         generic_pos = self._zeros_like_cached(generic_text)
         memory = self._encoder_fn(
-            src=img_feats,                         # (H*W, 1, d) — read-only
+            src=img_feats,  # (H*W, 1, d) — read-only
             src_key_padding_mask=None,
-            src_pos=img_pos_embeds,                # read-only
+            src_pos=img_pos_embeds,  # read-only
             prompt=generic_text,
             prompt_pos=generic_pos,
             prompt_key_padding_mask=generic_mask,
@@ -816,10 +821,10 @@ class Sam3MultiClassPredictorFast:
         # may require contiguous memory, so we use .contiguous() here (which
         # creates a copy for expanded tensors).  The encoder inputs above
         # are at bs=1 and don't need expansion.
-        enc_hs = memory["memory"]           # (total_tokens, 1, d)
-        enc_pos = memory["pos_embed"]       # (total_tokens, 1, d)
-        enc_pad = memory["padding_mask"]    # (1, total_tokens) or None
-        enc_vr = memory["valid_ratios"]     # (1, num_levels, 2)
+        enc_hs = memory["memory"]  # (total_tokens, 1, d)
+        enc_pos = memory["pos_embed"]  # (total_tokens, 1, d)
+        enc_pad = memory["padding_mask"]  # (1, total_tokens) or None
+        enc_vr = memory["valid_ratios"]  # (1, num_levels, 2)
 
         enc_hs_n = enc_hs.expand(-1, N, -1).contiguous()
         enc_pos_n = enc_pos.expand(-1, N, -1).contiguous()
@@ -827,8 +832,8 @@ class Sam3MultiClassPredictorFast:
         enc_vr_n = enc_vr.expand(N, -1, -1).contiguous()
 
         # Class-specific text prompts for decoder
-        prompt = self._batched_text        # (seq, N, d)
-        prompt_mask = self._batched_mask   # (N, seq)
+        prompt = self._batched_text  # (seq, N, d)
+        prompt_mask = self._batched_mask  # (N, seq)
 
         # --- Decoder: bs=N with class-specific text ---
         query_embed = model.transformer.decoder.query_embed.weight
@@ -844,7 +849,7 @@ class Sam3MultiClassPredictorFast:
             spatial_shapes=memory["spatial_shapes"],
             valid_ratios=enc_vr_n,
             tgt_mask=None,
-            memory_text=prompt,          # class-specific
+            memory_text=prompt,  # class-specific
             text_attention_mask=prompt_mask,  # class-specific
             apply_dac=False,
         )
@@ -892,12 +897,12 @@ class Sam3MultiClassPredictorFast:
 
     def _forward_batched_trt(
         self,
-        backbone_out: Dict,
+        backbone_out: dict,
         img_feats: list,
         img_pos_embeds: list,
         vis_feat_sizes: list,
         img_ids: torch.Tensor,
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """Run encoder+decoder+scoring via TRT engine.
 
         Replaces _forward_batched when a TRT enc-dec engine is available.
@@ -909,7 +914,7 @@ class Sam3MultiClassPredictorFast:
         max_c = self._trt_enc_dec.max_classes
         has_presence = self._trt_enc_dec.has_presence
 
-        if N <= max_c:
+        if max_c >= N:
             # Single pass — all classes fit in one TRT call
             result = self._trt_enc_dec.forward(
                 img_feats=img_feats,
@@ -943,7 +948,7 @@ class Sam3MultiClassPredictorFast:
                 all_scores.append(s)
                 all_boxes.append(b)
             scores = torch.cat(all_scores, dim=0)  # (N, Q, 1)
-            boxes = torch.cat(all_boxes, dim=0)    # (N, Q, 4)
+            boxes = torch.cat(all_boxes, dim=0)  # (N, Q, 4)
             presence_logits = torch.cat(all_presence, dim=0) if has_presence else None
 
         # Presence probabilities from TRT engine (if available)
@@ -954,14 +959,14 @@ class Sam3MultiClassPredictorFast:
         present_indices = torch.arange(N, device=self.device)
 
         return {
-            "scores_all": scores,              # (N, Q, 1)
-            "boxes_all": boxes,                # (N, Q, 4) cxcywh
-            "hs_all": None,                    # not available from TRT
-            "encoder_hidden_states": None,     # not available from TRT
-            "prompt": self._batched_text,      # (seq, N, d)
-            "prompt_mask": self._batched_mask, # (N, seq)
+            "scores_all": scores,  # (N, Q, 1)
+            "boxes_all": boxes,  # (N, Q, 4) cxcywh
+            "hs_all": None,  # not available from TRT
+            "encoder_hidden_states": None,  # not available from TRT
+            "prompt": self._batched_text,  # (seq, N, d)
+            "prompt_mask": self._batched_mask,  # (N, seq)
             "presence_probs": presence_probs,  # (N,) or None
-            "present_indices": present_indices, # all classes
+            "present_indices": present_indices,  # all classes
         }
 
     # ------------------------------------------------------------------
@@ -970,7 +975,7 @@ class Sam3MultiClassPredictorFast:
 
     def _predict_single_pass(
         self,
-        backbone_out: Dict,
+        backbone_out: dict,
         img_feats: list,
         img_pos_embeds: list,
         vis_feat_sizes: list,
@@ -980,7 +985,7 @@ class Sam3MultiClassPredictorFast:
         per_class_nms: bool,
         orig_h: int,
         orig_w: int,
-    ) -> Dict:
+    ) -> dict:
         """Single-pass inference: one encoder+decoder+masks pass for all classes.
 
         Concatenates all class text tokens into (total_seq, 1, d), runs
@@ -991,15 +996,15 @@ class Sam3MultiClassPredictorFast:
         """
         model = self.model
 
-        prompt = self._concat_text       # (total_seq, 1, d)
+        prompt = self._concat_text  # (total_seq, 1, d)
         prompt_mask = self._concat_mask  # (1, total_seq)
 
         # --- Encoder at bs=1 ---
         prompt_pos = self._zeros_like_cached(prompt)
         memory = self._encoder_fn(
-            src=img_feats,              # read-only, no clone needed
+            src=img_feats,  # read-only, no clone needed
             src_key_padding_mask=None,
-            src_pos=img_pos_embeds,     # read-only, no clone needed
+            src_pos=img_pos_embeds,  # read-only, no clone needed
             prompt=prompt,
             prompt_pos=prompt_pos,
             prompt_key_padding_mask=prompt_mask,
@@ -1025,16 +1030,16 @@ class Sam3MultiClassPredictorFast:
                 attn_container["weights"] = output[1].detach()
                 return output
 
-            hooks.append(last_ca_text.register_forward_pre_hook(
-                pre_hook, with_kwargs=True
-            ))
+            hooks.append(
+                last_ca_text.register_forward_pre_hook(pre_hook, with_kwargs=True)
+            )
             hooks.append(last_ca_text.register_forward_hook(post_hook))
 
         # --- Decoder at bs=1 ---
         query_embed = model.transformer.decoder.query_embed.weight
         tgt = query_embed.unsqueeze(1)  # (Q, 1, d)
 
-        hs, reference_boxes, dec_presence_out, _ = self._decoder_fn(
+        hs, reference_boxes, _dec_presence_out, _ = self._decoder_fn(
             tgt=tgt,
             memory=enc_hs,
             memory_key_padding_mask=memory["padding_mask"],
@@ -1082,7 +1087,8 @@ class Sam3MultiClassPredictorFast:
         # --- Convert boxes to output format ---
         scale = torch.tensor(
             [orig_w, orig_h, orig_w, orig_h],
-            device=self.device, dtype=torch.float32,
+            device=self.device,
+            dtype=torch.float32,
         )
         boxes_xyxy = box_cxcywh_to_xyxy(boxes_k.float()) * scale
 
@@ -1090,7 +1096,9 @@ class Sam3MultiClassPredictorFast:
             # Box-based NMS, skip mask generation entirely
             if nms_threshold < 1.0 and len(scores_k) > 0:
                 if per_class_nms:
-                    nms_keep = _batched_nms(boxes_xyxy, scores_k, class_ids_k, nms_threshold)
+                    nms_keep = _batched_nms(
+                        boxes_xyxy, scores_k, class_ids_k, nms_threshold
+                    )
                 else:
                     nms_keep = _nms(boxes_xyxy, scores_k, nms_threshold)
                 scores_k = scores_k[nms_keep]
@@ -1161,7 +1169,7 @@ class Sam3MultiClassPredictorFast:
     def _assign_classes(
         self,
         hs: torch.Tensor,
-        attn_container: Dict,
+        attn_container: dict,
     ) -> torch.Tensor:
         """Assign class IDs to each query using the configured method.
 
@@ -1189,7 +1197,9 @@ class Sam3MultiClassPredictorFast:
         return cosine_scores.argmax(dim=-1)  # (Q,)
 
     def _assign_classes_attention(
-        self, attn_container: Dict, num_queries: int,
+        self,
+        attn_container: dict,
+        num_queries: int,
     ) -> torch.Tensor:
         """Sum decoder ca_text attention weights per class token group.
 
@@ -1234,15 +1244,15 @@ class Sam3MultiClassPredictorFast:
 
     def _postprocess(
         self,
-        batched: Dict,
-        backbone_out: Dict,
+        batched: dict,
+        backbone_out: dict,
         img_ids: torch.Tensor,
         orig_h: int,
         orig_w: int,
         confidence_threshold: float,
         nms_threshold: float,
         per_class_nms: bool,
-    ) -> Dict:
+    ) -> dict:
         """Post-process batched outputs into final predictions.
 
         For detection_only mode, uses fully vectorized tensor ops across all
@@ -1251,26 +1261,43 @@ class Sam3MultiClassPredictorFast:
         """
         present_idx = batched["present_indices"]  # (K,)
         scores_all = batched["scores_all"]  # (N, Q, 1)
-        boxes_all = batched["boxes_all"]    # (N, Q, 4) cxcywh
+        boxes_all = batched["boxes_all"]  # (N, Q, 4) cxcywh
         presence_probs = batched["presence_probs"]  # (N,) or None
 
         scale = torch.tensor(
             [orig_w, orig_h, orig_w, orig_h],
-            device=self.device, dtype=torch.float32,
+            device=self.device,
+            dtype=torch.float32,
         )
 
         if self.detection_only:
             return self._postprocess_detection(
-                present_idx, scores_all, boxes_all, presence_probs,
-                scale, orig_h, orig_w,
-                confidence_threshold, nms_threshold, per_class_nms,
+                present_idx,
+                scores_all,
+                boxes_all,
+                presence_probs,
+                scale,
+                orig_h,
+                orig_w,
+                confidence_threshold,
+                nms_threshold,
+                per_class_nms,
             )
 
         return self._postprocess_with_masks(
-            batched, backbone_out, img_ids,
-            present_idx, scores_all, boxes_all, presence_probs,
-            scale, orig_h, orig_w,
-            confidence_threshold, nms_threshold, per_class_nms,
+            batched,
+            backbone_out,
+            img_ids,
+            present_idx,
+            scores_all,
+            boxes_all,
+            presence_probs,
+            scale,
+            orig_h,
+            orig_w,
+            confidence_threshold,
+            nms_threshold,
+            per_class_nms,
         )
 
     def _postprocess_detection(
@@ -1285,7 +1312,7 @@ class Sam3MultiClassPredictorFast:
         confidence_threshold: float,
         nms_threshold: float,
         per_class_nms: bool,
-    ) -> Dict:
+    ) -> dict:
         """Vectorized detection-only postprocess (no Python per-class loop)."""
         # Sigmoid scores for all present classes at once: (K, Q)
         logits = scores_all[present_idx, :, 0].float()
@@ -1325,15 +1352,13 @@ class Sam3MultiClassPredictorFast:
             "masks_logits": None,
             "scores": scores[sort_idx],
             "class_ids": class_ids[sort_idx],
-            "class_names": [
-                self._class_names[c] for c in class_ids[sort_idx].tolist()
-            ],
+            "class_names": [self._class_names[c] for c in class_ids[sort_idx].tolist()],
         }
 
     def _postprocess_with_masks(
         self,
-        batched: Dict,
-        backbone_out: Dict,
+        batched: dict,
+        backbone_out: dict,
         img_ids: torch.Tensor,
         present_idx: torch.Tensor,
         scores_all: torch.Tensor,
@@ -1345,7 +1370,7 @@ class Sam3MultiClassPredictorFast:
         confidence_threshold: float,
         nms_threshold: float,
         per_class_nms: bool,
-    ) -> Dict:
+    ) -> dict:
         """Postprocess with lazy per-class mask generation."""
         model = self.model
 
@@ -1369,15 +1394,17 @@ class Sam3MultiClassPredictorFast:
             boxes_k = boxes_all[class_idx][keep]
             boxes_xyxy = box_cxcywh_to_xyxy(boxes_k.float()) * scale
 
-            hs_kept = batched["hs_all"][:, class_idx:class_idx+1, keep]
+            hs_kept = batched["hs_all"][:, class_idx : class_idx + 1, keep]
             with torch.autocast("cuda", dtype=torch.float16, enabled=self.use_fp16):
                 seg_out = model.segmentation_head(
                     backbone_feats=backbone_out["backbone_fpn"],
                     obj_queries=hs_kept,
                     image_ids=img_ids,
-                    encoder_hidden_states=batched["encoder_hidden_states"][:, class_idx:class_idx+1],
-                    prompt=batched["prompt"][:, class_idx:class_idx+1],
-                    prompt_mask=batched["prompt_mask"][class_idx:class_idx+1],
+                    encoder_hidden_states=batched["encoder_hidden_states"][
+                        :, class_idx : class_idx + 1
+                    ],
+                    prompt=batched["prompt"][:, class_idx : class_idx + 1],
+                    prompt_mask=batched["prompt_mask"][class_idx : class_idx + 1],
                 )
             masks_k = seg_out["pred_masks"][0]
             masks_logits_k = interpolate(
@@ -1389,9 +1416,7 @@ class Sam3MultiClassPredictorFast:
             all_masks_logits.append(masks_logits_k)
 
             all_scores.append(scores_k)
-            all_class_ids.append(
-                torch.full_like(scores_k, class_idx, dtype=torch.long)
-            )
+            all_class_ids.append(torch.full_like(scores_k, class_idx, dtype=torch.long))
             all_boxes.append(boxes_xyxy)
 
         if not all_scores:
@@ -1425,16 +1450,14 @@ class Sam3MultiClassPredictorFast:
             "masks_logits": masks_logits[sort_idx],
             "scores": scores[sort_idx],
             "class_ids": class_ids[sort_idx],
-            "class_names": [
-                self._class_names[c] for c in class_ids[sort_idx].tolist()
-            ],
+            "class_names": [self._class_names[c] for c in class_ids[sort_idx].tolist()],
         }
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
-    def _empty_result(self, orig_h: int, orig_w: int) -> Dict:
+    def _empty_result(self, orig_h: int, orig_w: int) -> dict:
         """Return an empty predictions dict."""
         if self.detection_only:
             return {

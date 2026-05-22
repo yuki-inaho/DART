@@ -7,9 +7,9 @@ Tests: pure BF16, FP16+BF16 mixed (MatMul in BF16, rest in FP16).
 
 import sys
 import time
-import torch
-import numpy as np
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -50,10 +50,24 @@ def build_engine_bf16_mixed(onnx_path, output_path):
 
     skip_types = set()
     for name in (
-        "SHAPE", "CONSTANT", "IDENTITY", "SHUFFLE", "GATHER",
-        "SLICE", "SQUEEZE", "UNSQUEEZE", "CONCATENATION", "CONDITION",
-        "CAST", "ASSERTION", "FILL", "SCATTER", "RESIZE",
-        "NON_ZERO", "ONE_HOT", "GRID_SAMPLE",
+        "SHAPE",
+        "CONSTANT",
+        "IDENTITY",
+        "SHUFFLE",
+        "GATHER",
+        "SLICE",
+        "SQUEEZE",
+        "UNSQUEEZE",
+        "CONCATENATION",
+        "CONDITION",
+        "CAST",
+        "ASSERTION",
+        "FILL",
+        "SCATTER",
+        "RESIZE",
+        "NON_ZERO",
+        "ONE_HOT",
+        "GRID_SAMPLE",
     ):
         if hasattr(trt.LayerType, name):
             skip_types.add(getattr(trt.LayerType, name))
@@ -77,19 +91,21 @@ def build_engine_bf16_mixed(onnx_path, output_path):
                 layer.set_output_type(j, trt.float16)
             fp16_count += 1
 
-    print(f"  Mixed: {bf16_count} BF16 (MatMul+Softmax) / {fp16_count} FP16 / {skip_count} skip")
+    print(
+        f"  Mixed: {bf16_count} BF16 (MatMul+Softmax) / {fp16_count} FP16 / {skip_count} skip"
+    )
 
     print("Building engine...")
     t0 = time.time()
     engine_bytes = builder.build_serialized_network(network, config)
-    print(f"  Build time: {time.time()-t0:.0f}s")
+    print(f"  Build time: {time.time() - t0:.0f}s")
 
     if engine_bytes is None:
         raise RuntimeError("Engine build failed")
 
     with open(output_path, "wb") as f:
         f.write(engine_bytes)
-    print(f"  Saved: {output_path} ({Path(output_path).stat().st_size/1e6:.0f} MB)")
+    print(f"  Saved: {output_path} ({Path(output_path).stat().st_size / 1e6:.0f} MB)")
     return output_path
 
 
@@ -114,14 +130,14 @@ def build_engine_pure_bf16(onnx_path, output_path):
     print("Building engine...")
     t0 = time.time()
     engine_bytes = builder.build_serialized_network(network, config)
-    print(f"  Build time: {time.time()-t0:.0f}s")
+    print(f"  Build time: {time.time() - t0:.0f}s")
 
     if engine_bytes is None:
         raise RuntimeError("Engine build failed")
 
     with open(output_path, "wb") as f:
         f.write(engine_bytes)
-    print(f"  Saved: {output_path} ({Path(output_path).stat().st_size/1e6:.0f} MB)")
+    print(f"  Saved: {output_path} ({Path(output_path).stat().st_size / 1e6:.0f} MB)")
     return output_path
 
 
@@ -134,7 +150,9 @@ def load_and_benchmark(engine_path, label, n_warmup=10, n_iters=100):
     print(f"\n=== {label} ===")
     print("Loading PyTorch model...")
     model = build_sam3_image_model(
-        device=DEVICE, checkpoint_path="sam3.pt", eval_mode=True,
+        device=DEVICE,
+        checkpoint_path="sam3.pt",
+        eval_mode=True,
     )
     backbone = model.backbone
 
@@ -196,7 +214,9 @@ def main():
         load_and_benchmark("backbone_bf16.engine", "Pure BF16")
     except Exception as e:
         print(f"  FAILED: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
 
     # 2. FP16 + BF16 mixed (MatMul/Softmax in BF16)
     print("\n" + "=" * 60)
@@ -207,7 +227,9 @@ def main():
         load_and_benchmark("backbone_fp16_bf16mix.engine", "FP16 + BF16 MatMul")
     except Exception as e:
         print(f"  FAILED: {e}")
-        import traceback; traceback.print_exc()
+        import traceback
+
+        traceback.print_exc()
 
     print("\nDone!")
 

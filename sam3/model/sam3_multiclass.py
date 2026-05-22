@@ -35,12 +35,11 @@ Usage:
     # results["class_names"] : list[str], class name per detection
 """
 
-from typing import Dict, List, Optional, Union
-
 import numpy as np
 import PIL
 import torch
-from torchvision.ops import batched_nms as _batched_nms, nms as _nms
+from torchvision.ops import batched_nms as _batched_nms
+from torchvision.ops import nms as _nms
 from torchvision.transforms import v2
 
 from sam3.model.box_ops import box_cxcywh_to_xyxy
@@ -85,20 +84,20 @@ class Sam3MultiClassPredictor:
         )
 
         # Class embedding cache (populated by set_classes)
-        self._class_names: Optional[List[str]] = None
+        self._class_names: list[str] | None = None
         self._num_classes: int = 0
 
         # Per-class text features and masks
         # Each entry: text_feats (seq, 1, d), text_mask (1, seq)
-        self._per_class_text: Optional[List[torch.Tensor]] = None
-        self._per_class_mask: Optional[List[torch.Tensor]] = None
+        self._per_class_text: list[torch.Tensor] | None = None
+        self._per_class_mask: list[torch.Tensor] | None = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     @torch.inference_mode()
-    def set_classes(self, class_names: List[str]) -> None:
+    def set_classes(self, class_names: list[str]) -> None:
         """Pre-compute and cache text embeddings for all target classes.
 
         Runs the text encoder once for all classes and stores per-class
@@ -117,9 +116,7 @@ class Sam3MultiClassPredictor:
         self._num_classes = len(class_names)
 
         # Run text encoder for all classes at once (efficient batching)
-        text_outputs = self.model.backbone.forward_text(
-            class_names, device=self.device
-        )
+        text_outputs = self.model.backbone.forward_text(class_names, device=self.device)
         # language_features: (seq_len, N, d_model) — seq-first
         # language_mask:     (N, seq_len) — True = padding token
         text_feats = text_outputs["language_features"]
@@ -135,9 +132,9 @@ class Sam3MultiClassPredictor:
     @torch.inference_mode()
     def set_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
-        state: Optional[Dict] = None,
-    ) -> Dict:
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
+        state: dict | None = None,
+    ) -> dict:
         """Encode an image through the vision backbone.
 
         Args:
@@ -169,11 +166,11 @@ class Sam3MultiClassPredictor:
     @torch.inference_mode()
     def predict(
         self,
-        state: Dict,
+        state: dict,
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """Run multi-class detection + segmentation.
 
         Runs the encoder+decoder once per class (sharing cached backbone
@@ -272,9 +269,7 @@ class Sam3MultiClassPredictor:
                 all_masks_logits.append(masks_logits_k)
 
             all_scores.append(scores_k)
-            all_class_ids.append(
-                torch.full_like(scores_k, class_idx, dtype=torch.long)
-            )
+            all_class_ids.append(torch.full_like(scores_k, class_idx, dtype=torch.long))
             all_boxes.append(boxes_xyxy)
 
         # Handle no detections
@@ -290,7 +285,9 @@ class Sam3MultiClassPredictor:
             # Box-based NMS (torchvision, CUDA-accelerated)
             if nms_threshold < 1.0 and len(scores) > 0:
                 if per_class_nms:
-                    nms_keep = _batched_nms(boxes_xyxy, scores, class_ids, nms_threshold)
+                    nms_keep = _batched_nms(
+                        boxes_xyxy, scores, class_ids, nms_threshold
+                    )
                 else:
                     nms_keep = _nms(boxes_xyxy, scores, nms_threshold)
                 scores = scores[nms_keep]
@@ -304,7 +301,9 @@ class Sam3MultiClassPredictor:
                 "masks_logits": None,
                 "scores": scores[sort_idx],
                 "class_ids": class_ids[sort_idx],
-                "class_names": [self._class_names[c] for c in class_ids[sort_idx].tolist()],
+                "class_names": [
+                    self._class_names[c] for c in class_ids[sort_idx].tolist()
+                ],
             }
 
         masks_logits = torch.cat(all_masks_logits)
@@ -340,11 +339,11 @@ class Sam3MultiClassPredictor:
     @torch.inference_mode()
     def predict_image(
         self,
-        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
+        image: PIL.Image.Image | torch.Tensor | np.ndarray,
         confidence_threshold: float = 0.3,
         nms_threshold: float = 0.7,
         per_class_nms: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """Convenience: set_image + predict in one call.
 
         Args:
@@ -374,7 +373,7 @@ class Sam3MultiClassPredictor:
         img_pos_embeds: list,
         vis_feat_sizes: list,
         class_idx: int,
-    ) -> Dict:
+    ) -> dict:
         """Run encoder+decoder+scoring for a single class (no masks).
 
         Reuses cached backbone features (img_feats, img_pos_embeds) so the
@@ -467,7 +466,7 @@ class Sam3MultiClassPredictor:
     # Internal: post-processing helpers
     # ------------------------------------------------------------------
 
-    def _empty_result(self, orig_h: int, orig_w: int) -> Dict:
+    def _empty_result(self, orig_h: int, orig_w: int) -> dict:
         """Return an empty predictions dict when nothing is detected."""
         if self.detection_only:
             return {

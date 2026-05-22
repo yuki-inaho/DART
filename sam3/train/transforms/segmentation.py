@@ -7,6 +7,7 @@ import pycocotools.mask as mask_utils
 import torch
 import torchvision.transforms.functional as F
 from PIL import Image as PILImage
+
 from sam3.model.box_ops import masks_to_boxes
 from sam3.train.data.sam3_image_dataset import Datapoint
 
