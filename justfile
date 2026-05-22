@@ -18,7 +18,7 @@ demo-image path classes="apple":
         -o /tmp/dart_demo.jpg
     xdg-open /tmp/dart_demo.jpg 2>/dev/null || echo "Saved to /tmp/dart_demo.jpg"
 
-# Video detection with live display window
+# Video detection: detect with tqdm → loop playback (Q/ESC to quit)
 demo-video path classes="tomato" max_frames=default_max_frames imgsz=default_imgsz:
     {{python}} demo_video.py \
         --video {{path}} \
@@ -27,9 +27,10 @@ demo-video path classes="tomato" max_frames=default_max_frames imgsz=default_img
         --compile default \
         --imgsz {{imgsz}} \
         --max-frames {{max_frames}} \
-        --display
+        -o /tmp/dart_demo_video.mp4
+    {{python}} scripts/play_video.py /tmp/dart_demo_video.mp4
 
-# Video detection → output file
+# Video detection → save to file only (no playback)
 demo-video-save path output classes="tomato" max_frames=default_max_frames imgsz=default_imgsz:
     {{python}} demo_video.py \
         --video {{path}} \
