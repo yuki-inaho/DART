@@ -149,6 +149,121 @@ def annotate_image(
     return img
 
 
+def create_predictor(
+    model,
+    *,
+    device: str = "cuda",
+    imgsz: int = 1008,
+    fast: bool = False,
+    compile_mode: str = None,
+    shared_encoder: bool = False,
+    generic_prompt: str = "object",
+    single_pass: bool = False,
+    class_method: str = "cosine",
+    prototype_path: str = None,
+    detection_only: bool = False,
+    trt_engine_path: str = None,
+    trt_enc_dec_engine_path: str = None,
+    trt_max_classes: int = 16,
+    text_cache: str = None,
+) -> Sam3MultiClassPredictor | Sam3MultiClassPredictorFast:
+    """Create the appropriate predictor for the given configuration."""
+    text_cache_exists = text_cache and os.path.exists(text_cache)
+    use_trt_only = (
+        text_cache_exists
+        and trt_engine_path
+        and trt_enc_dec_engine_path
+        and detection_only
+    )
+
+    if single_pass:
+        print(
+            f"Using SINGLE-PASS predictor (1x encoder+decoder + {class_method} class scoring)"
+        )
+        return Sam3MultiClassPredictorFast(
+            model,
+            device=device,
+            resolution=imgsz,
+            compile_mode=compile_mode if class_method != "attention" else None,
+            use_fp16=True,
+            single_pass=True,
+            class_method=class_method,
+            prototype_path=prototype_path,
+            detection_only=detection_only,
+            trt_engine_path=trt_engine_path,
+        )
+
+    if fast or use_trt_only:
+        mode_parts = ["batched", "fp16"]
+        if compile_mode:
+            mode_parts.append(f"compile={compile_mode}")
+        if trt_engine_path:
+            mode_parts.append("trt-backbone")
+        if trt_enc_dec_engine_path:
+            mode_parts.append("trt-enc-dec")
+        if shared_encoder:
+            mode_parts.append(f'shared-enc("{generic_prompt}")')
+        if detection_only:
+            mode_parts.append("detection-only")
+        if text_cache:
+            mode_parts.append("text-cache")
+        print(f"Using FAST predictor ({' + '.join(mode_parts)})")
+        return Sam3MultiClassPredictorFast(
+            model,
+            device=device,
+            resolution=imgsz,
+            compile_mode=compile_mode,
+            use_fp16=True,
+            presence_threshold=0.05,
+            shared_encoder=shared_encoder,
+            generic_prompt=generic_prompt,
+            detection_only=detection_only,
+            trt_engine_path=trt_engine_path,
+            trt_enc_dec_engine_path=trt_enc_dec_engine_path,
+            trt_max_classes=trt_max_classes,
+        )
+
+    print("Using standard predictor (per-class sequential)")
+    return Sam3MultiClassPredictor(
+        model, device=device, resolution=imgsz, detection_only=detection_only
+    )
+
+
+def print_results(results: dict, t_backbone: float, t_predict: float) -> None:
+    """Format and print detection results."""
+    num_dets = len(results["scores"])
+    print(f"\nDetected {num_dets} objects:")
+    for i in range(num_dets):
+        cls_name = results["class_names"][i]
+        score = results["scores"][i].item()
+        box = results["boxes"][i].tolist()
+        suffix = ""
+        if results["masks"] is not None:
+            suffix = f"  mask_area={results['masks'][i].sum().item()}"
+        print(
+            f"  [{i}] {cls_name:20s}  score={score:.3f}  "
+            f"box=[{box[0]:.0f},{box[1]:.0f},{box[2]:.0f},{box[3]:.0f}]"
+            f"{suffix}"
+        )
+    print(
+        f"\nTotal time: {(t_backbone + t_predict) * 1000:.1f}ms "
+        f"(backbone={t_backbone * 1000:.1f}ms + predict={t_predict * 1000:.1f}ms)"
+    )
+
+
+def save_annotated(
+    image: Image.Image,
+    results: dict,
+    class_names: list[str],
+    output_path: str,
+) -> None:
+    """Annotate and save the detection result image."""
+    mask_alpha = 0.0 if results["masks"] is None else 0.3
+    annotated = annotate_image(image, results, class_names, mask_alpha=mask_alpha)
+    annotated.save(output_path, quality=95)
+    print(f"\nSaved annotated image to {output_path}")
+
+
 def run_multiclass_inference(
     image_path: str,
     class_names: list[str],
@@ -197,57 +312,23 @@ def run_multiclass_inference(
         imgsz=imgsz,
     )
 
-    # Create predictor
-    if single_pass:
-        print(
-            f"Using SINGLE-PASS predictor (1x encoder+decoder + {class_method} class scoring)"
-        )
-        predictor = Sam3MultiClassPredictorFast(
-            model,
-            device=device,
-            resolution=imgsz,
-            compile_mode=compile_mode if class_method != "attention" else None,
-            use_fp16=True,
-            single_pass=True,
-            class_method=class_method,
-            prototype_path=prototype_path,
-            detection_only=detection_only,
-            trt_engine_path=trt_engine_path,
-        )
-    elif fast or use_trt_only:
-        mode_parts = ["batched", "fp16"]
-        if compile_mode:
-            mode_parts.append(f"compile={compile_mode}")
-        if trt_engine_path:
-            mode_parts.append("trt-backbone")
-        if trt_enc_dec_engine_path:
-            mode_parts.append("trt-enc-dec")
-        if shared_encoder:
-            mode_parts.append(f'shared-enc("{generic_prompt}")')
-        if detection_only:
-            mode_parts.append("detection-only")
-        if text_cache:
-            mode_parts.append("text-cache")
-        print(f"Using FAST predictor ({' + '.join(mode_parts)})")
-        predictor = Sam3MultiClassPredictorFast(
-            model,
-            device=device,
-            resolution=imgsz,
-            compile_mode=compile_mode,
-            use_fp16=True,
-            presence_threshold=0.05,
-            shared_encoder=shared_encoder,
-            generic_prompt=generic_prompt,
-            detection_only=detection_only,
-            trt_engine_path=trt_engine_path,
-            trt_enc_dec_engine_path=trt_enc_dec_engine_path,
-            trt_max_classes=trt_max_classes,
-        )
-    else:
-        print("Using standard predictor (per-class sequential)")
-        predictor = Sam3MultiClassPredictor(
-            model, device=device, resolution=imgsz, detection_only=detection_only
-        )
+    predictor = create_predictor(
+        model,
+        device=device,
+        imgsz=imgsz,
+        fast=fast,
+        compile_mode=compile_mode,
+        shared_encoder=shared_encoder,
+        generic_prompt=generic_prompt,
+        single_pass=single_pass,
+        class_method=class_method,
+        prototype_path=prototype_path,
+        detection_only=detection_only,
+        trt_engine_path=trt_engine_path,
+        trt_enc_dec_engine_path=trt_enc_dec_engine_path,
+        trt_max_classes=trt_max_classes,
+        text_cache=text_cache,
+    )
 
     # Pre-compute class embeddings (done once, reusable across images)
     print(f"Setting {len(class_names)} classes: {class_names}")
@@ -308,37 +389,12 @@ def run_multiclass_inference(
     t_predict = time.perf_counter() - t0
     print(f"  Prediction took {t_predict * 1000:.1f}ms")
 
-    # Print results
-    num_dets = len(results["scores"])
-    print(f"\nDetected {num_dets} objects:")
-    for i in range(num_dets):
-        cls_name = results["class_names"][i]
-        score = results["scores"][i].item()
-        box = results["boxes"][i].tolist()
-        suffix = ""
-        if results["masks"] is not None:
-            suffix = f"  mask_area={results['masks'][i].sum().item()}"
-        print(
-            f"  [{i}] {cls_name:20s}  score={score:.3f}  "
-            f"box=[{box[0]:.0f},{box[1]:.0f},{box[2]:.0f},{box[3]:.0f}]"
-            f"{suffix}"
-        )
+    print_results(results, t_backbone, t_predict)
 
-    print(
-        f"\nTotal time: {(t_backbone + t_predict) * 1000:.1f}ms "
-        f"(backbone={t_backbone * 1000:.1f}ms + predict={t_predict * 1000:.1f}ms)"
-    )
-
-    # Save annotated image
     if output_path is None:
         stem = Path(image_path).stem
         output_path = f"{stem}_annotated.jpg"
-    if results["masks"] is not None:
-        annotated = annotate_image(image, results, class_names)
-    else:
-        annotated = annotate_image(image, results, class_names, mask_alpha=0.0)
-    annotated.save(output_path, quality=95)
-    print(f"\nSaved annotated image to {output_path}")
+    save_annotated(image, results, class_names, output_path)
 
     return results
 

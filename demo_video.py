@@ -126,6 +126,27 @@ def draw_detections_cv2(frame_bgr, results, class_names, tracks=None):
     return frame_bgr
 
 
+def _validate_args(args) -> list[str]:
+    """Return a list of validation errors (empty if valid)."""
+    errors = []
+    if args.imgsz % 14 != 0:
+        errors.append(f"--imgsz must be divisible by 14, got {args.imgsz}")
+    if args.trt is None and args.compile is None and not args.efficient_backbone:
+        errors.append("Specify --trt ENGINE or --compile MODE (or both)")
+    if args.split_backbone and args.compile is None:
+        errors.append("--split-backbone requires --compile MODE")
+    if args.split_backbone and args.trt:
+        errors.append("--split-backbone is not compatible with --trt")
+    if args.efficient_backbone and not args.efficient_model:
+        errors.append("--efficient-backbone requires --efficient-model")
+    if args.efficient_backbone and args.split_backbone:
+        errors.append(
+            "--split-backbone is not compatible with --efficient-backbone "
+            "(student backbone has no ViT blocks to split)"
+        )
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(description="SAM3 pipelined video processing")
     parser.add_argument("--video", required=True, help="Input video file path")
@@ -309,31 +330,10 @@ def main():
 
         args.classes = COCO_CLASSES
 
-    if args.imgsz % 14 != 0:
-        print(f"ERROR: --imgsz must be divisible by 14, got {args.imgsz}")
-        sys.exit(1)
-
-    if args.trt is None and args.compile is None and not args.efficient_backbone:
-        print("ERROR: Specify --trt ENGINE or --compile MODE (or both)")
-        sys.exit(1)
-
-    if args.split_backbone and args.compile is None:
-        print("ERROR: --split-backbone requires --compile MODE")
-        sys.exit(1)
-
-    if args.split_backbone and args.trt:
-        print("ERROR: --split-backbone is not compatible with --trt")
-        sys.exit(1)
-
-    if args.efficient_backbone and not args.efficient_model:
-        print("ERROR: --efficient-backbone requires --efficient-model")
-        sys.exit(1)
-
-    if args.efficient_backbone and args.split_backbone:
-        print(
-            "ERROR: --split-backbone is not compatible with --efficient-backbone "
-            "(student backbone has no ViT blocks to split)"
-        )
+    errors = _validate_args(args)
+    if errors:
+        for e in errors:
+            print(f"ERROR: {e}")
         sys.exit(1)
 
     # Parse skip_blocks
