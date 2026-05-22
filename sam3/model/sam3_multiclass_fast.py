@@ -64,6 +64,8 @@ from torchvision.ops import batched_nms as _batched_nms
 from torchvision.ops import nms as _nms
 from torchvision.transforms import v2
 
+from beartype import beartype
+
 from sam3.model.box_ops import box_cxcywh_to_xyxy
 from sam3.model.data_misc import interpolate
 from sam3.model.model_misc import inverse_sigmoid
@@ -336,6 +338,7 @@ class Sam3MultiClassPredictorFast(Sam3MultiClassPredictorBase):
     # Public API
     # ------------------------------------------------------------------
 
+    @beartype
     @torch.inference_mode()
     def set_classes(
         self,
@@ -464,6 +467,7 @@ class Sam3MultiClassPredictorFast(Sam3MultiClassPredictorBase):
                     torch.stack(reordered).to(self.device), dim=-1
                 )  # (N, d_proj)
 
+    @beartype
     @torch.inference_mode()
     def set_image(
         self,
@@ -561,6 +565,7 @@ class Sam3MultiClassPredictorFast(Sam3MultiClassPredictorBase):
 
         return results
 
+    @beartype
     @torch.inference_mode()
     def predict(
         self,

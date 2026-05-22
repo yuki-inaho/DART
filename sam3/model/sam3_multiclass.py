@@ -38,6 +38,7 @@ Usage:
 import numpy as np
 import PIL
 import torch
+from beartype import beartype
 from torchvision.ops import batched_nms as _batched_nms
 from torchvision.ops import nms as _nms
 
@@ -77,6 +78,7 @@ class Sam3MultiClassPredictor(Sam3MultiClassPredictorBase):
     # Public API
     # ------------------------------------------------------------------
 
+    @beartype
     @torch.inference_mode()
     def set_classes(self, class_names: list[str]) -> None:
         """Pre-compute and cache text embeddings for all target classes.
@@ -110,6 +112,7 @@ class Sam3MultiClassPredictor(Sam3MultiClassPredictorBase):
             self._per_class_text.append(text_feats[:, i : i + 1, :])  # (seq, 1, d)
             self._per_class_mask.append(text_masks[i : i + 1, :])  # (1, seq)
 
+    @beartype
     @torch.inference_mode()
     def set_image(
         self,
@@ -144,6 +147,7 @@ class Sam3MultiClassPredictor(Sam3MultiClassPredictorBase):
 
         return state
 
+    @beartype
     @torch.inference_mode()
     def predict(
         self,

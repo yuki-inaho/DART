@@ -5,8 +5,13 @@ refactored shared code (mask_iou, mask_nms, _empty_result, inheritance)
 works identically to the original duplicated implementations.
 """
 
+from typing import Union
+
+import numpy as np
+import PIL.Image
 import torch
 import pytest
+from beartype import beartype
 
 from sam3.model.predictor_base import Sam3MultiClassPredictorBase
 from sam3.model.sam3_multiclass import Sam3MultiClassPredictor
@@ -20,14 +25,21 @@ from sam3.model.sam3_multiclass_fast import Sam3MultiClassPredictorFast
 class ConcretePredictor(Sam3MultiClassPredictorBase):
     """Minimal concrete subclass for testing base methods."""
 
-    def set_classes(self, class_names):
+    @beartype
+    def set_classes(self, class_names: list[str]) -> None:
         self._class_names = class_names
         self._num_classes = len(class_names)
 
-    def set_image(self, image, state=None):
+    @beartype
+    def set_image(
+        self,
+        image: Union[PIL.Image.Image, torch.Tensor, np.ndarray],
+        state: dict | None = None,
+    ) -> dict:
         return {}
 
-    def predict(self, state, confidence_threshold=0.3, nms_threshold=0.7):
+    @beartype
+    def predict(self, state: dict, confidence_threshold: float = 0.3, nms_threshold: float = 0.7) -> dict:
         return self._empty_result(100, 100)
 
 
@@ -161,6 +173,28 @@ class TestEmptyResult:
         assert r["boxes"].device.type == "cpu"
         assert r["scores"].device.type == "cpu"
         assert r["masks"].device.type == "cpu"
+
+
+# ---------------------------------------------------------------------------
+# beartype runtime checks
+# ---------------------------------------------------------------------------
+
+class TestBeartype:
+    def test_set_classes_rejects_non_list(self, predictor):
+        with pytest.raises(Exception):
+            predictor.set_classes("not a list")
+
+    def test_set_classes_rejects_non_str_items(self, predictor):
+        with pytest.raises(Exception):
+            predictor.set_classes([1, 2, 3])
+
+    def test_set_classes_accepts_valid(self, predictor):
+        predictor.set_classes(["apple", "banana"])
+        assert predictor._num_classes == 2
+
+    def test_set_image_rejects_invalid_type(self, predictor):
+        with pytest.raises(Exception):
+            predictor.set_image("not an image")
 
 
 # ---------------------------------------------------------------------------
