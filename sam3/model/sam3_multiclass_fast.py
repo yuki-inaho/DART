@@ -67,6 +67,7 @@ from torchvision.transforms import v2
 from sam3.model.box_ops import box_cxcywh_to_xyxy
 from sam3.model.data_misc import interpolate
 from sam3.model.model_misc import inverse_sigmoid
+from sam3.model.predictor_base import Sam3MultiClassPredictorBase
 
 
 class _TRTModelStub:
@@ -124,7 +125,7 @@ class _TRTModelStub:
         return backbone_out, img_feats, img_pos_embeds, vis_feat_sizes
 
 
-class Sam3MultiClassPredictorFast:
+class Sam3MultiClassPredictorFast(Sam3MultiClassPredictorBase):
     """Optimized multi-class inference for SAM3.
 
     Batches all N classes through encoder+decoder in a single GPU call,
@@ -206,9 +207,13 @@ class Sam3MultiClassPredictorFast:
         if class_method == "prototype" and prototype_path is None:
             raise ValueError("prototype_path is required when class_method='prototype'")
 
-        self.model = model
-        self.resolution = resolution
-        self.device = device
+        super().__init__(
+            model=model,
+            resolution=resolution,
+            device=device,
+            detection_only=detection_only,
+        )
+
         self.use_fp16 = use_fp16
         self.presence_threshold = presence_threshold
         self.shared_encoder = shared_encoder
@@ -216,11 +221,10 @@ class Sam3MultiClassPredictorFast:
         self.single_pass = single_pass
         self._class_method = class_method
         self._prototype_path = prototype_path
-        self.detection_only = detection_only
         self._trt_engine_path = trt_engine_path
-        self._trt_backbone = None  # lazy-loaded TRTBackbone
+        self._trt_backbone = None
         self._trt_enc_dec_engine_path = trt_enc_dec_engine_path
-        self._trt_enc_dec = None  # lazy-loaded TRTEncoderDecoder
+        self._trt_enc_dec = None
         self._trt_max_classes = trt_max_classes
 
         if trt_enc_dec_engine_path is not None and not detection_only:
@@ -228,19 +232,6 @@ class Sam3MultiClassPredictorFast:
                 "trt_enc_dec_engine_path requires detection_only=True "
                 "(TRT enc-dec does not produce hidden states for mask generation)"
             )
-
-        self.transform = v2.Compose(
-            [
-                v2.ToDtype(torch.uint8, scale=True),
-                v2.Resize(size=(resolution, resolution)),
-                v2.ToDtype(torch.float32, scale=True),
-                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
-        )
-
-        # Class embedding cache
-        self._class_names: list[str] | None = None
-        self._num_classes: int = 0
 
         # Batched prompts: (seq, N, d) and (N, seq)
         self._batched_text: torch.Tensor | None = None
@@ -1139,7 +1130,7 @@ class Sam3MultiClassPredictorFast:
 
         # --- Mask-based NMS ---
         if nms_threshold < 1.0 and len(scores_k) > 0:
-            nms_keep = self._nms(
+            nms_keep = self.mask_nms(
                 scores=scores_k,
                 masks=masks_binary,
                 class_ids=class_ids_k,
@@ -1429,7 +1420,7 @@ class Sam3MultiClassPredictorFast:
         masks_binary = (masks_logits > 0.5).squeeze(1)
 
         if nms_threshold < 1.0 and len(scores) > 0:
-            nms_keep = self._nms(
+            nms_keep = self.mask_nms(
                 scores=scores,
                 masks=masks_binary,
                 class_ids=class_ids,
@@ -1453,59 +1444,4 @@ class Sam3MultiClassPredictorFast:
             "class_names": [self._class_names[c] for c in class_ids[sort_idx].tolist()],
         }
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _empty_result(self, orig_h: int, orig_w: int) -> dict:
-        """Return an empty predictions dict."""
-        if self.detection_only:
-            return {
-                "boxes": torch.zeros(0, 4, device=self.device),
-                "masks": None,
-                "masks_logits": None,
-                "scores": torch.zeros(0, device=self.device),
-                "class_ids": torch.zeros(0, device=self.device, dtype=torch.long),
-                "class_names": [],
-            }
-        return {
-            "boxes": torch.zeros(0, 4, device=self.device),
-            "masks": torch.zeros(
-                0, orig_h, orig_w, device=self.device, dtype=torch.bool
-            ),
-            "masks_logits": torch.zeros(0, 1, orig_h, orig_w, device=self.device),
-            "scores": torch.zeros(0, device=self.device),
-            "class_ids": torch.zeros(0, device=self.device, dtype=torch.long),
-            "class_names": [],
-        }
-
-    @staticmethod
-    def _mask_iou(mask_a: torch.Tensor, mask_b: torch.Tensor) -> torch.Tensor:
-        """Compute IoU between two binary masks."""
-        intersection = (mask_a & mask_b).sum().float()
-        union = (mask_a | mask_b).sum().float()
-        return intersection / union.clamp(min=1.0)
-
-    def _nms(
-        self,
-        scores: torch.Tensor,
-        masks: torch.Tensor,
-        class_ids: torch.Tensor,
-        iou_threshold: float,
-        per_class: bool,
-    ) -> torch.Tensor:
-        """Greedy mask-based NMS."""
-        order = scores.argsort(descending=True)
-        keep = []
-        for i in order.tolist():
-            should_keep = True
-            for j in keep:
-                if per_class and class_ids[i] != class_ids[j]:
-                    continue
-                iou = self._mask_iou(masks[i], masks[j])
-                if iou > iou_threshold:
-                    should_keep = False
-                    break
-            if should_keep:
-                keep.append(i)
-        return torch.tensor(keep, device=scores.device, dtype=torch.long)
+    # _empty_result, mask_iou, mask_nms inherited from Sam3MultiClassPredictorBase

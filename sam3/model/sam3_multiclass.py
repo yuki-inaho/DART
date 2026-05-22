@@ -40,14 +40,14 @@ import PIL
 import torch
 from torchvision.ops import batched_nms as _batched_nms
 from torchvision.ops import nms as _nms
-from torchvision.transforms import v2
 
 from sam3.model.box_ops import box_cxcywh_to_xyxy
 from sam3.model.data_misc import interpolate
 from sam3.model.model_misc import inverse_sigmoid
+from sam3.model.predictor_base import Sam3MultiClassPredictorBase
 
 
-class Sam3MultiClassPredictor:
+class Sam3MultiClassPredictor(Sam3MultiClassPredictorBase):
     """Multi-class inference wrapper for SAM3.
 
     Runs the backbone once per image and loops the lightweight
@@ -61,31 +61,12 @@ class Sam3MultiClassPredictor:
         device: str = "cuda",
         detection_only: bool = False,
     ):
-        """
-        Args:
-            model: A Sam3Image model instance (already loaded with weights).
-            resolution: Input image resolution (default 1008 to match SAM3).
-            device: Torch device for inference.
-            detection_only: If True, skip mask generation and return only
-                boxes + scores.  Uses box-based NMS.
-        """
-        self.model = model
-        self.resolution = resolution
-        self.device = device
-        self.detection_only = detection_only
-
-        self.transform = v2.Compose(
-            [
-                v2.ToDtype(torch.uint8, scale=True),
-                v2.Resize(size=(resolution, resolution)),
-                v2.ToDtype(torch.float32, scale=True),
-                v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-            ]
+        super().__init__(
+            model=model,
+            resolution=resolution,
+            device=device,
+            detection_only=detection_only,
         )
-
-        # Class embedding cache (populated by set_classes)
-        self._class_names: list[str] | None = None
-        self._num_classes: int = 0
 
         # Per-class text features and masks
         # Each entry: text_feats (seq, 1, d), text_mask (1, seq)
@@ -311,7 +292,7 @@ class Sam3MultiClassPredictor:
 
         # Apply mask-based NMS
         if nms_threshold < 1.0 and len(scores) > 0:
-            nms_keep = self._nms(
+            nms_keep = self.mask_nms(
                 scores=scores,
                 masks=masks_binary,
                 class_ids=class_ids,
@@ -462,72 +443,4 @@ class Sam3MultiClassPredictor:
 
         return out
 
-    # ------------------------------------------------------------------
-    # Internal: post-processing helpers
-    # ------------------------------------------------------------------
-
-    def _empty_result(self, orig_h: int, orig_w: int) -> dict:
-        """Return an empty predictions dict when nothing is detected."""
-        if self.detection_only:
-            return {
-                "boxes": torch.zeros(0, 4, device=self.device),
-                "masks": None,
-                "masks_logits": None,
-                "scores": torch.zeros(0, device=self.device),
-                "class_ids": torch.zeros(0, device=self.device, dtype=torch.long),
-                "class_names": [],
-            }
-        return {
-            "boxes": torch.zeros(0, 4, device=self.device),
-            "masks": torch.zeros(
-                0, orig_h, orig_w, device=self.device, dtype=torch.bool
-            ),
-            "masks_logits": torch.zeros(0, 1, orig_h, orig_w, device=self.device),
-            "scores": torch.zeros(0, device=self.device),
-            "class_ids": torch.zeros(0, device=self.device, dtype=torch.long),
-            "class_names": [],
-        }
-
-    @staticmethod
-    def _mask_iou(mask_a: torch.Tensor, mask_b: torch.Tensor) -> torch.Tensor:
-        """Compute IoU between two binary masks."""
-        intersection = (mask_a & mask_b).sum().float()
-        union = (mask_a | mask_b).sum().float()
-        return intersection / union.clamp(min=1.0)
-
-    def _nms(
-        self,
-        scores: torch.Tensor,
-        masks: torch.Tensor,
-        class_ids: torch.Tensor,
-        iou_threshold: float,
-        per_class: bool,
-    ) -> torch.Tensor:
-        """Greedy mask-based NMS.
-
-        Args:
-            scores: (K,) detection scores.
-            masks: (K, H, W) binary masks.
-            class_ids: (K,) class assignments.
-            iou_threshold: Suppress detections with IoU above this.
-            per_class: If True, only suppress within same class.
-
-        Returns:
-            Indices of kept detections.
-        """
-        order = scores.argsort(descending=True)
-        keep = []
-
-        for i in order.tolist():
-            should_keep = True
-            for j in keep:
-                if per_class and class_ids[i] != class_ids[j]:
-                    continue
-                iou = self._mask_iou(masks[i], masks[j])
-                if iou > iou_threshold:
-                    should_keep = False
-                    break
-            if should_keep:
-                keep.append(i)
-
-        return torch.tensor(keep, device=scores.device, dtype=torch.long)
+    # _empty_result, mask_iou, mask_nms inherited from Sam3MultiClassPredictorBase
