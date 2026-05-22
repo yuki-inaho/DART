@@ -1,3 +1,6 @@
+# IDE / tool state
+.serena/
+
 # Model weights / linked artifacts
 models/
 *.pt
