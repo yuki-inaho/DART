@@ -1,3 +1,12 @@
+# Model weights / linked artifacts
+models/
+*.pt
+*.pth
+*.onnx
+*.onnx.data
+*.engine
+*.safetensors
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

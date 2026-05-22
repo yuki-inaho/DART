@@ -57,7 +57,7 @@ class PositionEmbeddingSine(nn.Module):
                 (vit_size // 2, vit_size // 2),  # FPN 0.5x -> 36
             ]
             for size in precompute_sizes:
-                tensors = torch.zeros((1, 1) + size, device="cuda")
+                tensors = torch.zeros((1, 1) + size, device="cpu")
                 self.forward(tensors)
                 buf = self.cache[size].clone().detach()
                 self.register_buffer(
@@ -85,7 +85,7 @@ class PositionEmbeddingSine(nn.Module):
             if getattr(self, buf_name, None) is not None:
                 continue  # Already precomputed
             buf = next(self.buffers(), None)
-            device = buf.device if buf is not None else "cuda"
+            device = buf.device if buf is not None else "cpu"
             dummy = torch.zeros((1, 1) + size, device=device)
             self.forward(dummy)
             buf = self.cache[size].clone().detach()
